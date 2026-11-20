@@ -7,7 +7,7 @@ import { Icon } from '../../components/Icon';
 import { Heatmap, MonthGrid } from '../../components/shared';
 import { BlobImg, Btn, Empty, Field, FilePick, IBtn, ImagePick, Modal, Panel, Progress, Seg, Stat } from '../../components/ui';
 import { db, patchSettings, type Exercise, type ExerciseKind, type Muscle, type ProgressPhoto, type WeightUnit } from '../../db/schema';
-import { dayKey, fmt, fromKey, weekdayNames, weekKey, weekStart } from '../../lib/dates';
+import { dayKey, fmt, fromKey, weekdayIdx, weekdayNames, weekKey, weekStart } from '../../lib/dates';
 import { confirmBox, toast } from '../../lib/fx';
 import { useAutosave, useLive } from '../../lib/hooks';
 import { youtubeId } from '../../lib/links';
@@ -16,6 +16,7 @@ import { go, setQuery, useRoute } from '../../lib/router';
 import { L, round1, uid } from '../../lib/runtime';
 import { useSettings } from '../../lib/settings';
 import { bestOf, e1rm, prCount, tonnage } from '../../lib/stats';
+import { startWorkout } from '../../lib/actions';
 import { TiltGallery } from '../../components/TiltGallery';
 import { openEntity } from '../../lib/entity';
 import { archiveExercise, createExercise, entryName, findDuplicate, guard, KIND_LABELS, kindOf, MUSCLE_LABELS, muscleLabel, normName } from '../../lib/training';
@@ -372,9 +373,19 @@ export function FlashCalendar() {
   const exercises = useLive(() => db.exercises.toArray(), []) || [];
   const [month, setMonth] = useState(() => new Date());
   const [day, setDay] = useState(dayKey());
+  const settings = useSettings();
+  const templates = useLive(() => db.templates.toArray(), []) || [];
+  const today = dayKey();
   const maxT = Math.max(1, ...workouts.map(tonnage));
   const byDay = (k: string) => workouts.filter((w) => w.date === k);
+  // план по дням недели: показывается на сегодня и будущих днях, где тренировки ещё нет
+  const planOf = (k: string) => {
+    if (k < today || byDay(k).length) return undefined;
+    const t = templates.find((x) => x.id === settings.trainingPlan?.[String(weekdayIdx(fromKey(k)))]);
+    return t && !t.archived ? t : undefined;
+  };
   const sel = byDay(day);
+  const selPlan = planOf(day);
   return (
     <div className="space-y-4">
       <Panel title={L('Посещения зала', 'Gym attendance')} kanji="跡" accent="#ff2744">
@@ -400,13 +411,23 @@ export function FlashCalendar() {
             selected={day}
             onSelect={setDay}
             cellClass="min-h-[56px] sm:min-h-[72px]"
-            renderDay={(_, k) =>
-              byDay(k).map((w) => (
-                <div key={w.id} className="text-[10px] leading-tight truncate px-1 mt-0.5" style={{ background: '#ff274426', borderLeft: '2px solid #ff2744' }}>
-                  {w.name}
-                </div>
-              ))
-            }
+            renderDay={(_, k) => {
+              const p = planOf(k);
+              return (
+                <>
+                  {byDay(k).map((w) => (
+                    <div key={w.id} className="text-[10px] leading-tight truncate px-1 mt-0.5" style={{ background: '#ff274426', borderLeft: '2px solid #ff2744' }}>
+                      {w.name}
+                    </div>
+                  ))}
+                  {p && (
+                    <div className="text-[10px] leading-tight truncate px-1 mt-0.5 opacity-80" style={{ border: `1px dashed ${p.color || '#ff9f0a'}`, color: p.color || undefined }} title={L('По плану', 'Planned')}>
+                      {p.name}
+                    </div>
+                  )}
+                </>
+              );
+            }}
           />
         </Panel>
         <Panel title={fmt(fromKey(day), 'EEEE, d MMMM')} kanji="日">
@@ -426,7 +447,27 @@ export function FlashCalendar() {
               ))}
             </div>
           ))}
-          {!sel.length && <div className="text-sm text-muted">{L('В этот день тренировки не было', 'No workout this day')}</div>}
+          {!sel.length && selPlan && (
+            <div className="space-y-2">
+              <div className="text-sm">
+                {L('По плану', 'Planned')}: <b style={{ color: selPlan.color }}>{selPlan.name}</b>
+              </div>
+              {day === today && (
+                <Btn
+                  size="sm"
+                  variant="flash"
+                  icon="bolt"
+                  onClick={async () => {
+                    const id = await guard(L('начать тренировку', 'start workout'), () => startWorkout(selPlan.id));
+                    if (id) go(`/taijutsu/flash/log?w=${id}`);
+                  }}
+                >
+                  {L('Начать', 'Start')}
+                </Btn>
+              )}
+            </div>
+          )}
+          {!sel.length && !selPlan && <div className="text-sm text-muted">{day > today ? L('По плану — отдых', 'Rest day') : L('В этот день тренировки не было', 'No workout this day')}</div>}
         </Panel>
       </div>
     </div>

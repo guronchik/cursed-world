@@ -103,6 +103,9 @@ export async function setMedLog(med: Med, date: string, time: string, status: 't
 
 export async function startWorkout(templateId?: string, date = dayKey()) {
   const t = templateId ? await db.templates.get(templateId) : undefined;
+  // повторное нажатие на план открывает уже начатую сегодня пустую тренировку, а не плодит новые
+  const same = (await db.workouts.where('date').equals(date).toArray()).find((w) => !w.finished && w.templateId === t?.id && w.entries.every((e) => !e.sets.length));
+  if (same) return same.id;
   const id = uid();
   // ссылки на удалённые упражнения пропускаем; в каждую запись — снимок названия (история не зависит от библиотеки)
   const exs = new Map((await db.exercises.bulkGet((t?.items || []).map((i) => i.exerciseId))).filter((e): e is NonNullable<typeof e> => !!e).map((e) => [e.id, e]));
