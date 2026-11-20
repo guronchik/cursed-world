@@ -6,7 +6,7 @@ import { axis, grid, tooltip } from '../../components/charts';
 import { Icon } from '../../components/Icon';
 import { Heatmap, MonthGrid } from '../../components/shared';
 import { BlobImg, Btn, Empty, Field, FilePick, IBtn, ImagePick, Modal, Panel, Progress, Seg, Stat } from '../../components/ui';
-import { db, patchSettings, type Exercise, type Muscle, type ProgressPhoto, type Template } from '../../db/schema';
+import { db, patchSettings, type Exercise, type ExerciseKind, type Muscle, type ProgressPhoto, type WeightUnit } from '../../db/schema';
 import { dayKey, fmt, fromKey, weekdayNames, weekKey, weekStart } from '../../lib/dates';
 import { confirmBox, toast } from '../../lib/fx';
 import { useAutosave, useLive } from '../../lib/hooks';
@@ -16,11 +16,11 @@ import { go, setQuery, useRoute } from '../../lib/router';
 import { L, round1, uid } from '../../lib/runtime';
 import { useSettings } from '../../lib/settings';
 import { bestOf, e1rm, prCount, tonnage } from '../../lib/stats';
-import { MUSCLES } from './BlackFlash';
 import { TiltGallery } from '../../components/TiltGallery';
 import { openEntity } from '../../lib/entity';
+import { archiveExercise, createExercise, entryName, findDuplicate, guard, KIND_LABELS, kindOf, MUSCLE_LABELS, muscleLabel, normName } from '../../lib/training';
+import { askDeleteExercise, CustomTag, exerciseMenu, Group, MUSCLE_COLOR, PlanList, SwipeRow } from './train';
 
-const MUSCLE_COLOR: Record<string, string> = { chest: '#ff453a', back: '#0a84ff', legs: '#30d158', shoulders: '#ff9f0a', arms: '#bf5af2', core: '#ffd60a', full: '#64d2ff' };
 
 // ───────────── Статистика ─────────────
 export function FlashStats() {
@@ -32,8 +32,19 @@ export function FlashStats() {
   const [bwDate, setBwDate] = useState(dayKey());
   const [bwKg, setBwKg] = useState('');
   const [target, setTarget] = useState(settings.targetBodyWeight ? String(settings.targetBodyWeight) : '');
-  const used = exercises.filter((e) => workouts.some((w) => w.entries.some((x) => x.exerciseId === e.id && x.sets.length)));
-  const ex = exId || used[0]?.id || '';
+  // упражнения из журнала — в том числе удалённые из библиотеки и разовые (по снимку названия)
+  const used = (() => {
+    const m = new Map<string, { id: string; name: string; kind: ExerciseKind }>();
+    for (const w of workouts)
+      for (const en of w.entries)
+        if (en.sets.length && !m.has(en.exerciseId)) {
+          const live = exercises.find((e) => e.id === en.exerciseId);
+          m.set(en.exerciseId, { id: en.exerciseId, name: entryName(en, exercises) + (live ? '' : ` (${en.oneOff ? L('разовое', 'one-off') : L('удалено', 'deleted')})`), kind: kindOf(live || en) });
+        }
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+  })();
+  const ex = exId && used.some((u) => u.id === exId) ? exId : used[0]?.id || '';
+  const exKind = used.find((u) => u.id === ex)?.kind || 'weight';
 
   const total = workouts.reduce((s, w) => s + tonnage(w), 0);
   const thisWeek = workouts.filter((w) => weekKey(fromKey(w.date)) === weekKey(new Date())).reduce((s, w) => s + tonnage(w), 0);
@@ -48,7 +59,9 @@ export function FlashStats() {
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((w) => {
       const sets = w.entries.filter((e) => e.exerciseId === ex).flatMap((e) => e.sets);
-      return { name: fmt(fromKey(w.date), 'd.MM'), max: Math.max(...sets.map((s) => s.weight)), e1rm: round1(Math.max(...sets.map((s) => e1rm(s.weight, s.reps)))) };
+      // для веса — максимальный вес и 1ПМ; для остальных типов — повторы, секунды или километры
+      const metric = (s: (typeof sets)[number]) => (exKind === 'time' ? s.time || 0 : exKind === 'distance' ? s.dist || 0 : exKind === 'bodyweight' && !s.weight ? s.reps : s.weight);
+      return { name: fmt(fromKey(w.date), 'd.MM'), max: Math.max(...sets.map(metric)), e1rm: exKind === 'weight' ? round1(Math.max(...sets.map((s) => e1rm(s.weight, s.reps)))) : undefined };
     });
   const bwData = bw.map((b) => ({ name: fmt(fromKey(b.date), 'd.MM'), kg: b.kg }));
   const tgt = settings.targetBodyWeight;
@@ -103,8 +116,8 @@ export function FlashStats() {
                 <YAxis {...axis} domain={['auto', 'auto']} />
                 <Tooltip {...tooltip} />
                 {exercises.find((e) => e.id === ex)?.targetWeight ? <ReferenceLine y={exercises.find((e) => e.id === ex)!.targetWeight} stroke="#f2c14e" strokeDasharray="5 5" /> : null}
-                <Line type="monotone" dataKey="max" name={L('Макс. вес', 'Max weight')} stroke="#ff2744" strokeWidth={3} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="e1rm" name={L('1ПМ (оценка)', 'Est. 1RM')} stroke="var(--accent-1)" strokeWidth={2} dot={false} strokeDasharray="4 3" />
+                <Line type="monotone" dataKey="max" name={exKind === 'time' ? L('Время, сек', 'Time, s') : exKind === 'distance' ? L('Дистанция, км', 'Distance, km') : exKind === 'bodyweight' ? L('Повторы / вес', 'Reps / weight') : L('Макс. вес', 'Max weight')} stroke="#ff2744" strokeWidth={3} dot={{ r: 3 }} />
+                {exKind === 'weight' && <Line type="monotone" dataKey="e1rm" name={L('1ПМ (оценка)', 'Est. 1RM')} stroke="var(--accent-1)" strokeWidth={2} dot={false} strokeDasharray="4 3" />}
               </LineChart>
             </ResponsiveContainer>
           ) : (
@@ -166,7 +179,7 @@ export function FlashStats() {
         <Panel title={L('Целевые рабочие веса', 'Target working weights')} kanji="標">
           <div className="space-y-3">
             {exercises
-              .filter((e) => e.targetWeight)
+              .filter((e) => e.targetWeight && !e.archived)
               .map((e) => {
                 const b = bestOf(workouts, e.id);
                 const pct = e.targetWeight ? (b.maxWeight / e.targetWeight) * 100 : 0;
@@ -407,7 +420,7 @@ export function FlashCalendar() {
               </div>
               {w.entries.map((e) => (
                 <div key={e.id} className="text-[13px] py-0.5">
-                  <span className="text-muted">{exercises.find((x) => x.id === e.exerciseId)?.name}:</span>{' '}
+                  <span className="text-muted">{entryName(e, exercises)}:</span>{' '}
                   <span className="mono">{e.sets.map((s) => `${s.weight}×${s.reps}${s.pr ? ' PR' : ''}`).join(', ') || '—'}</span>
                 </div>
               ))}
@@ -420,48 +433,83 @@ export function FlashCalendar() {
   );
 }
 
-// ───────────── Библиотека, шаблоны, план ─────────────
+// ───────────── Библиотека, планы, план по дням ─────────────
 export function Library() {
   const exercises = useLive(() => db.exercises.toArray(), []) || [];
   const templates = useLive(() => db.templates.toArray(), []) || [];
   const settings = useSettings();
   const { query } = useRoute();
   const exQ = query.get('ex');
-  const [muscle, setMuscle] = useState<Muscle | 'all'>('all');
+  const [muscle, setMuscle] = useState<Muscle | 'all' | 'archived'>('all');
   const [q, setQ] = useState('');
-  const [editT, setEditT] = useState<Template | null>(null);
   const [newEx, setNewEx] = useState<Exercise | null>(null);
   const [libView, setLibView] = useState<'gallery' | 'grid'>('gallery');
-  const M = MUSCLES();
-  const list = exercises.filter((e) => (muscle === 'all' || e.muscle === muscle) && (!q.trim() || e.name.toLowerCase().includes(q.trim().toLowerCase()))).sort((a, b) => a.name.localeCompare(b.name));
+  const M = MUSCLE_LABELS();
+  const archivedCount = exercises.filter((e) => e.archived).length;
+  const usedMuscles = (Object.keys(M) as Muscle[]).filter((m) => m !== 'other' || exercises.some((e) => !e.archived && e.muscle === 'other'));
+  const list = exercises
+    .filter((e) => (muscle === 'archived' ? e.archived : !e.archived && (muscle === 'all' || e.muscle === muscle)) && (!q.trim() || normName(e.name).includes(normName(q))))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const exact = q.trim() ? findDuplicate(q, exercises) : undefined;
   const opened = exercises.find((e) => e.id === exQ) || null;
   const names = weekdayNames('EEEE');
+  const view = muscle === 'archived' ? 'grid' : libView;
+
+  const createFromSearch = async () => {
+    const ex = await guard(L('создать упражнение', 'create exercise'), () => createExercise({ name: q, muscle: muscle === 'all' || muscle === 'archived' ? undefined : muscle }));
+    if (!ex) return;
+    toast(`${L('Создано', 'Created')}: ${ex.name}`);
+    setQ('');
+  };
+
+  const chips = (small = false) => (
+    <>
+      <button className={`chip ${small ? '!py-1' : ''} ${muscle === 'all' ? 'chip-on' : ''}`} onClick={() => setMuscle('all')}>
+        {L('Все', 'All')}
+      </button>
+      {usedMuscles.map((m) => (
+        <button key={m} className={`chip ${small ? '!py-1' : ''} ${muscle === m ? 'chip-on' : ''}`} onClick={() => setMuscle(m)}>
+          {M[m]}
+        </button>
+      ))}
+      {archivedCount > 0 && (
+        <button className={`chip ${small ? '!py-1' : ''} ${muscle === 'archived' ? 'chip-on' : ''}`} onClick={() => setMuscle('archived')}>
+          <Icon name="inbox" size={12} /> {L('Архив', 'Archive')} {archivedCount}
+        </button>
+      )}
+    </>
+  );
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 items-center">
-        <button className={`chip ${muscle === 'all' ? 'chip-on' : ''}`} onClick={() => setMuscle('all')}>
-          {L('Все', 'All')}
-        </button>
-        {(Object.keys(M) as Muscle[]).map((m) => (
-          <button key={m} className={`chip ${muscle === m ? 'chip-on' : ''}`} onClick={() => setMuscle(m)}>
-            {M[m]}
-          </button>
-        ))}
-        <input className="inp !w-48 !py-1.5 ml-auto" value={q} onChange={(e) => setQ(e.target.value)} placeholder={L('Поиск', 'Search')} />
-        <Btn icon="plus" onClick={() => setNewEx({ id: uid(), name: '', muscle: muscle === 'all' ? 'chest' : muscle, notes: '', createdAt: Date.now() })}>
+        {chips()}
+        <input
+          className="inp !w-48 !py-1.5 ml-auto"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && q.trim() && !exact && void createFromSearch()}
+          placeholder={L('Поиск', 'Search')}
+          data-testid="lib-search"
+        />
+        <Btn icon="plus" onClick={() => setNewEx({ id: uid(), name: q.trim(), muscle: muscle === 'all' || muscle === 'archived' ? 'chest' : muscle, notes: '', createdAt: Date.now(), isCustom: true, archived: false, kind: 'weight', unit: 'kg' })}>
           {L('Упражнение', 'Exercise')}
         </Btn>
       </div>
-      <Seg options={[{ v: 'gallery' as const, label: L('Галерея', 'Gallery') }, { v: 'grid' as const, label: L('Сетка', 'Grid') }]} value={libView} onChange={setLibView} />
-      {libView === 'gallery' && (
+      {q.trim() && !exact && (
+        <button type="button" className="w-full sm:w-auto flex items-center gap-2 rounded-xl px-4 min-h-[48px] text-acc border border-dashed border-line hover:bg-panel-2" onClick={() => void createFromSearch()} data-testid="lib-create">
+          <Icon name="plus" size={16} /> {L('Создать', 'Create')} «{q.trim()}»
+        </button>
+      )}
+      {muscle !== 'archived' && <Seg options={[{ v: 'gallery' as const, label: L('Галерея', 'Gallery') }, { v: 'grid' as const, label: L('Сетка', 'Grid') }]} value={libView} onChange={setLibView} />}
+      {view === 'gallery' && list.length > 0 && (
         <TiltGallery
           items={list}
-          total={exercises.length}
+          total={exercises.filter((e) => !e.archived).length}
           label={L('Библиотека упражнений', 'Exercise library')}
           getId={(e) => e.id}
           getTitle={(e) => e.name}
-          getSubtitle={(e) => M[e.muscle] + (e.targetWeight ? ` · → ${e.targetWeight} kg` : '')}
+          getSubtitle={(e) => muscleLabel(e) + (e.isCustom ? ' · Custom' : '') + (e.targetWeight ? ` · → ${e.targetWeight} ${e.unit || 'kg'}` : '')}
           getColor={(e) => MUSCLE_COLOR[e.muscle] || '#ff9f0a'}
           getImage={(e) =>
             e.photoId ? <BlobImg id={e.photoId} className="absolute inset-0 w-full h-full object-cover" /> : youtubeId(e.videoUrl) ? `https://i.ytimg.com/vi/${youtubeId(e.videoUrl)}/hqdefault.jpg` : (
@@ -472,69 +520,69 @@ export function Library() {
           }
           renderMeta={(e) => (
             <div className="space-y-2">
-              <span className="tag">{M[e.muscle]}</span>
-              {e.targetWeight ? <div className="mono text-[13px]">{L('Цель', 'Target')}: {e.targetWeight} kg</div> : null}
+              <span className="tag">{muscleLabel(e)}</span> <CustomTag ex={e} />
+              {e.targetWeight ? <div className="mono text-[13px]">{L('Цель', 'Target')}: {e.targetWeight} {e.unit || 'kg'}</div> : null}
               {e.notes && <p className="text-[13px] text-muted line-clamp-4">{e.notes}</p>}
             </div>
           )}
           onOpen={(e) => openEntity('exercise', e.id, { order: list.map((x) => x.id), title: e.name })}
-          filters={
-            <div className="flex flex-wrap gap-1.5">
-              <button className={`chip !py-1 ${muscle === 'all' ? 'chip-on' : ''}`} onClick={() => setMuscle('all')}>{L('Все', 'All')}</button>
-              {(Object.keys(M) as Muscle[]).map((m) => (
-                <button key={m} className={`chip !py-1 ${muscle === m ? 'chip-on' : ''}`} onClick={() => setMuscle(m)}>{M[m]}</button>
-              ))}
-            </div>
-          }
+          filters={<div className="flex flex-wrap gap-1.5">{chips(true)}</div>}
         />
       )}
-      {libView === 'grid' && <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-        {list.map((e) => (
-          <button key={e.id} className="panel panel-flat text-left overflow-hidden hover:brightness-125" onClick={() => setQuery('ex', e.id)}>
-            <div className="aspect-video bg-void relative">
-              {e.photoId ? (
-                <BlobImg id={e.photoId} className="w-full h-full object-cover" />
-              ) : youtubeId(e.videoUrl) ? (
-                <img src={`https://i.ytimg.com/vi/${youtubeId(e.videoUrl)}/mqdefault.jpg`} alt="" className="w-full h-full object-cover" loading="lazy" />
-              ) : (
-                <div className="absolute inset-0 grid place-items-center text-dim">
-                  <Icon name="dumbbell" size={28} />
-                </div>
-              )}
-              {(e.videoUrl || e.videoBlobId) && (
-                <span className="absolute right-1.5 bottom-1.5 tag" style={{ background: '#ff2744', color: '#fff' }}>
-                  <Icon name="play" size={10} />
-                </span>
-              )}
-            </div>
-            <div className="p-2.5">
-              <div className="text-sm leading-tight">{e.name}</div>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="tag">{M[e.muscle]}</span>
-                {e.targetWeight ? <span className="text-[11px] text-dim mono">→ {e.targetWeight} kg</span> : null}
+      {view === 'grid' && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3" data-testid="lib-grid">
+          {list.map((e) => (
+            <SwipeRow key={e.id} onDelete={() => void askDeleteExercise(e)} onMenu={() => void exerciseMenu(e, { onEdit: () => setQuery('ex', e.id), onOpen: () => openEntity('exercise', e.id, { title: e.name }) })}>
+              <div className="panel panel-flat overflow-hidden relative" data-ex={e.name}>
+                <button className="block w-full text-left hover:brightness-125" onClick={() => setQuery('ex', e.id)}>
+                  <div className="aspect-video bg-void relative">
+                    {e.photoId ? (
+                      <BlobImg id={e.photoId} className="w-full h-full object-cover" />
+                    ) : youtubeId(e.videoUrl) ? (
+                      <img src={`https://i.ytimg.com/vi/${youtubeId(e.videoUrl)}/mqdefault.jpg`} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="absolute inset-0 grid place-items-center text-dim">
+                        <Icon name="dumbbell" size={28} />
+                      </div>
+                    )}
+                    {(e.videoUrl || e.videoBlobId) && (
+                      <span className="absolute right-1.5 bottom-1.5 tag" style={{ background: '#ff2744', color: '#fff' }}>
+                        <Icon name="play" size={10} />
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-2.5 pr-11">
+                    <div className="text-sm leading-tight">{e.name}</div>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                      <span className="tag">{muscleLabel(e)}</span>
+                      <CustomTag ex={e} />
+                      {e.archived && <span className="tag">{L('архив', 'archived')}</span>}
+                      {e.targetWeight ? <span className="text-[11px] text-dim mono">→ {e.targetWeight} {e.unit || 'kg'}</span> : null}
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="ibtn absolute right-0.5 bottom-0.5"
+                  title={L('Действия', 'Actions')}
+                  aria-label={`${L('Действия', 'Actions')}: ${e.name}`}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    void exerciseMenu(e, { onEdit: () => setQuery('ex', e.id), onOpen: () => openEntity('exercise', e.id, { title: e.name }) });
+                  }}
+                >
+                  <Icon name="more" size={17} />
+                </button>
               </div>
-            </div>
-          </button>
-        ))}
-      </div>}
-      {!list.length && libView === 'grid' && <Empty text={L('Ничего не найдено', 'Nothing found')} icon="dumbbell" />}
+            </SwipeRow>
+          ))}
+        </div>
+      )}
+      {!list.length && !q.trim() && <Empty text={muscle === 'archived' ? L('Архив пуст', 'Archive is empty') : L('Ничего не найдено', 'Nothing found')} icon="dumbbell" />}
 
       <div className="grid gap-4 lg:grid-cols-2 items-start">
-        <Panel
-          title={L('Шаблоны тренировок', 'Workout templates')}
-          kanji="型"
-          actions={
-            <Btn size="xs" icon="plus" onClick={() => setEditT({ id: uid(), name: '', items: [] })}>
-              {L('Шаблон', 'Template')}
-            </Btn>
-          }
-        >
-          {templates.map((t) => (
-            <button key={t.id} className="w-full text-left py-2 border-b border-line/40 last:border-0 hover:bg-cursed/5 px-1" onClick={() => setEditT(t)}>
-              <div className="h-display">{t.name}</div>
-              <div className="text-[12px] text-muted">{t.items.map((i) => `${exercises.find((e) => e.id === i.exerciseId)?.name || '—'} ${i.sets}×${i.reps}`).join(' · ')}</div>
-            </button>
-          ))}
+        <Panel title={L('Планы тренировок', 'Workout plans')} kanji="型">
+          <PlanList />
         </Panel>
         <Panel title={L('План по дням недели', 'Weekly plan')} kanji="週">
           <div className="space-y-1.5">
@@ -547,11 +595,13 @@ export function Library() {
                   onChange={(e) => patchSettings({ trainingPlan: { ...settings.trainingPlan, [String(i)]: e.target.value || undefined } })}
                 >
                   <option value="">— {L('отдых', 'rest')} —</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
+                  {templates
+                    .filter((t) => !t.archived || t.id === settings.trainingPlan?.[String(i)])
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
                 </select>
               </div>
             ))}
@@ -560,20 +610,27 @@ export function Library() {
         </Panel>
       </div>
 
-      {(opened || newEx) && <ExerciseModal key={(opened || newEx)!.id} e={(opened || newEx)!} isNew={!opened} onClose={() => (opened ? setQuery('ex') : setNewEx(null))} />}
-      {editT && <TemplateEditor t={editT} exercises={exercises} onClose={() => setEditT(null)} />}
+      {(opened || newEx) && <ExerciseModal key={(opened || newEx)!.id} e={(opened || newEx)!} isNew={!opened} all={exercises} onClose={() => (opened ? setQuery('ex') : setNewEx(null))} />}
     </div>
   );
 }
 
-function ExerciseModal({ e: init, isNew, onClose }: { e: Exercise; isNew: boolean; onClose: () => void }) {
+function ExerciseModal({ e: init, isNew, all, onClose }: { e: Exercise; isNew: boolean; all: Exercise[]; onClose: () => void }) {
   const [e, setE] = useState(init);
   const set = (p: Partial<Exercise>) => setE((x) => ({ ...x, ...p }));
   const video = useBlobUrl(e.videoBlobId);
   const yt = youtubeId(e.videoUrl);
-  useAutosave(e, (v) => v.name.trim() && db.exercises.put(v), 400, !isNew);
+  const dup = findDuplicate(e.name, all, e.id);
+  useAutosave(e, (v) => {
+    if (!v.name.trim()) return;
+    void guard(L('сохранить упражнение', 'save exercise'), async () => {
+      // упражнение могли удалить, пока окно открыто — не «воскрешаем» его автосохранением
+      if (await db.exercises.get(v.id)) await db.exercises.put({ ...v, name: v.name.trim() });
+    });
+  }, 400, !isNew);
   useEffect(() => setE(init), [init.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const M = MUSCLES();
+  const M = MUSCLE_LABELS();
+  const kind = kindOf(e);
   return (
     <Modal
       open
@@ -584,30 +641,26 @@ function ExerciseModal({ e: init, isNew, onClose }: { e: Exercise; isNew: boolea
       footer={
         <>
           {!isNew && (
-            <Btn
-              size="sm"
-              variant="danger"
-              icon="trash"
-              className="mr-auto"
-              onClick={async () => {
-                if (await confirmBox(L('Удалить упражнение из библиотеки? В старых тренировках оно станет «удалённым».', 'Delete exercise? Old workouts will show it as deleted.'), { danger: true })) {
-                  await delBlob(e.photoId);
-                  await delBlob(e.videoBlobId);
-                  await db.exercises.delete(e.id);
-                  onClose();
-                }
-              }}
-            >
-              {L('Удалить', 'Delete')}
-            </Btn>
+            <>
+              <Btn size="sm" variant="danger" icon="trash" className="mr-auto" onClick={() => void askDeleteExercise(e, onClose)}>
+                {L('Удалить', 'Delete')}
+              </Btn>
+              <Btn size="sm" variant="ghost" icon={e.archived ? 'undo' : 'inbox'} onClick={() => void archiveExercise(e.id, !e.archived).then(onClose)}>
+                {e.archived ? L('Из архива', 'Unarchive') : L('В архив', 'Archive')}
+              </Btn>
+            </>
           )}
           <Btn
             size="sm"
             icon="check"
             disabled={!e.name.trim()}
             onClick={async () => {
-              await db.exercises.put({ ...e, name: e.name.trim() });
-              onClose();
+              const ok = await guard(L('сохранить упражнение', 'save exercise'), async () => {
+                if (!isNew && !(await db.exercises.get(e.id))) throw new Error(L('упражнение уже удалено', 'exercise was deleted'));
+                await db.exercises.put({ ...e, name: e.name.trim() });
+                return true;
+              });
+              if (ok) onClose();
             }}
           >
             {isNew ? L('Создать', 'Create') : L('Готово', 'Done')}
@@ -620,20 +673,67 @@ function ExerciseModal({ e: init, isNew, onClose }: { e: Exercise; isNew: boolea
           <Field label={L('Название', 'Name')}>
             <input className="inp" value={e.name} autoFocus={isNew} onChange={(x) => set({ name: x.target.value })} />
           </Field>
-          <Field label={L('Группа мышц', 'Muscle group')}>
-            <select className="inp" value={e.muscle} onChange={(x) => set({ muscle: x.target.value as Muscle })}>
-              {(Object.keys(M) as Muscle[]).map((m) => (
-                <option key={m} value={m}>
-                  {M[m]}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label={L('Целевой рабочий вес, кг', 'Target working weight, kg')}>
-            <input className="inp mono" inputMode="decimal" value={e.targetWeight ?? ''} onChange={(x) => set({ targetWeight: Number(x.target.value.replace(',', '.')) || undefined })} />
-          </Field>
+          {dup && (
+            <div className="text-[12.5px] rounded-lg px-3 py-2" style={{ background: '#ff9f0a14', color: '#ffb340' }} role="alert">
+              {L('Такое уже есть', 'Already exists')}: «{dup.name}»{dup.archived ? ` (${L('в архиве', 'archived')})` : ''}.{' '}
+              <button type="button" className="underline" onClick={() => (onClose(), setQuery('ex', dup.id))}>
+                {L('Открыть существующее', 'Open existing')}
+              </button>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={L('Группа мышц', 'Muscle group')}>
+              <select className="inp" value={e.muscle} onChange={(x) => set({ muscle: x.target.value as Muscle })}>
+                {(Object.keys(M) as Muscle[]).map((m) => (
+                  <option key={m} value={m}>
+                    {m === 'other' ? L('Своя / другое', 'Custom / other') : M[m]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {e.muscle === 'other' ? (
+              <Field label={L('Своя группа', 'Custom group')}>
+                <input className="inp" value={e.muscleCustom || ''} onChange={(x) => set({ muscleCustom: x.target.value || undefined })} />
+              </Field>
+            ) : (
+              <Field label={L('Оборудование', 'Equipment')}>
+                <input className="inp" value={e.equipment || ''} onChange={(x) => set({ equipment: x.target.value || undefined })} />
+              </Field>
+            )}
+          </div>
+          {e.muscle === 'other' && (
+            <Field label={L('Оборудование', 'Equipment')}>
+              <input className="inp" value={e.equipment || ''} onChange={(x) => set({ equipment: x.target.value || undefined })} />
+            </Field>
+          )}
+          <Group label={L('Тип', 'Type')}>
+            <div className="overflow-x-auto">
+              <Seg options={(Object.keys(KIND_LABELS()) as ExerciseKind[]).map((k) => ({ v: k, label: KIND_LABELS()[k] }))} value={kind} onChange={(v) => set({ kind: v })} />
+            </div>
+          </Group>
+          {(kind === 'weight' || kind === 'bodyweight') && (
+            <div className="grid grid-cols-2 gap-2">
+              <Group label={L('Единицы', 'Units')}>
+                <Seg options={[{ v: 'kg' as WeightUnit, label: 'kg' }, { v: 'lb' as WeightUnit, label: 'lb' }]} value={e.unit || 'kg'} onChange={(v) => set({ unit: v })} />
+              </Group>
+              <Field label={`${L('Цель', 'Target')}, ${e.unit || 'kg'}`}>
+                <input className="inp mono" inputMode="decimal" value={e.targetWeight ?? ''} onChange={(x) => set({ targetWeight: Number(x.target.value.replace(',', '.')) || undefined })} />
+              </Field>
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-2">
+            <Field label={L('Подходы', 'Sets')}>
+              <input className="inp mono" inputMode="numeric" value={e.defSets ?? ''} onChange={(x) => set({ defSets: Number(x.target.value) || undefined })} placeholder="3" />
+            </Field>
+            <Field label={kind === 'time' ? L('Секунды', 'Seconds') : L('Повторы', 'Reps')}>
+              <input className="inp mono" inputMode="numeric" value={e.defReps ?? ''} onChange={(x) => set({ defReps: Number(x.target.value) || undefined })} placeholder="10" />
+            </Field>
+            <Field label={L('Отдых, сек', 'Rest, s')}>
+              <input className="inp mono" inputMode="numeric" value={e.defRest ?? ''} onChange={(x) => set({ defRest: Number(x.target.value) || undefined })} placeholder="90" />
+            </Field>
+          </div>
           <Field label={L('Заметки о технике', 'Technique notes')}>
-            <textarea className="inp" rows={5} value={e.notes} onChange={(x) => set({ notes: x.target.value })} />
+            <textarea className="inp" rows={4} value={e.notes} onChange={(x) => set({ notes: x.target.value })} />
           </Field>
         </div>
         <div className="space-y-3">
@@ -691,86 +791,7 @@ function ExerciseModal({ e: init, isNew, onClose }: { e: Exercise; isNew: boolea
           </div>
         </div>
       </div>
-      {!isNew && <div className="text-[11px] text-dim mt-3">{L('Изменения сохраняются автоматически', 'Changes are saved automatically')}</div>}
-    </Modal>
-  );
-}
-
-function TemplateEditor({ t: init, exercises, onClose }: { t: Template; exercises: Exercise[]; onClose: () => void }) {
-  const [t, setT] = useState(init);
-  const exists = useLive(() => db.templates.get(init.id), [init.id]);
-  const move = (i: number, d: number) => {
-    const items = t.items.slice();
-    const j = i + d;
-    if (j < 0 || j >= items.length) return;
-    [items[i], items[j]] = [items[j], items[i]];
-    setT({ ...t, items });
-  };
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={t.name || L('Шаблон', 'Template')}
-      kanji="型"
-      wide
-      footer={
-        <>
-          {exists && (
-            <Btn
-              size="sm"
-              variant="danger"
-              icon="trash"
-              className="mr-auto"
-              onClick={async () => {
-                if (await confirmBox(L('Удалить шаблон?', 'Delete template?'), { danger: true })) {
-                  await db.templates.delete(t.id);
-                  onClose();
-                }
-              }}
-            >
-              {L('Удалить', 'Delete')}
-            </Btn>
-          )}
-          <Btn
-            size="sm"
-            icon="check"
-            disabled={!t.name.trim()}
-            onClick={async () => {
-              await db.templates.put({ ...t, name: t.name.trim() });
-              onClose();
-            }}
-          >
-            {L('Сохранить', 'Save')}
-          </Btn>
-        </>
-      }
-    >
-      <Field label={L('Название', 'Name')}>
-        <input className="inp" value={t.name} onChange={(e) => setT({ ...t, name: e.target.value })} placeholder="Push / Pull / Legs / Upper…" />
-      </Field>
-      <div className="label mt-4 mb-2">{L('Упражнения', 'Exercises')}</div>
-      <div className="space-y-2">
-        {t.items.map((it, i) => (
-          <div key={i} className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
-            <select className="inp !py-1.5 flex-1 min-w-[10rem]" value={it.exerciseId} onChange={(e) => setT({ ...t, items: t.items.map((x, j) => (j === i ? { ...x, exerciseId: e.target.value } : x)) })}>
-              {exercises.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name}
-                </option>
-              ))}
-            </select>
-            <input type="number" min={1} className="inp !py-1.5 !w-16 mono" value={it.sets} onChange={(e) => setT({ ...t, items: t.items.map((x, j) => (j === i ? { ...x, sets: Math.max(1, Number(e.target.value)) } : x)) })} />
-            <span className="text-dim">×</span>
-            <input type="number" min={1} className="inp !py-1.5 !w-16 mono" value={it.reps} onChange={(e) => setT({ ...t, items: t.items.map((x, j) => (j === i ? { ...x, reps: Math.max(1, Number(e.target.value)) } : x)) })} />
-            <IBtn icon="up" className="ibtn-sm" onClick={() => move(i, -1)} />
-            <IBtn icon="down" className="ibtn-sm" onClick={() => move(i, 1)} />
-            <IBtn icon="x" className="ibtn-sm" onClick={() => setT({ ...t, items: t.items.filter((_, j) => j !== i) })} />
-          </div>
-        ))}
-      </div>
-      <Btn size="sm" variant="ghost" icon="plus" className="mt-3" disabled={!exercises.length} onClick={() => setT({ ...t, items: [...t.items, { exerciseId: exercises[0].id, sets: 3, reps: 8 }] })}>
-        {L('Упражнение', 'Exercise')}
-      </Btn>
+      {!isNew && <div className="text-[11px] text-dim mt-3">{L('Изменения сохраняются автоматически. Переименование видно везде — в планах, журнале и статистике.', 'Changes save automatically. Renames show everywhere — plans, log and stats.')}</div>}
     </Modal>
   );
 }

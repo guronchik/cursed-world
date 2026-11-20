@@ -188,6 +188,8 @@ export function Empty({ text, icon = 'sparkle', action }: { text: ReactNode; ico
 }
 
 /** На телефоне — bottom sheet (свайп вниз закрывает), на ПК — стеклянное окно. */
+const modalStack: symbol[] = [];
+
 export function Modal({
   open,
   onClose,
@@ -213,8 +215,11 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
     setDy(0);
+    // Esc закрывает только верхнее окно (лист «Добавить упражнение» поверх редактора плана)
+    const me = Symbol('modal');
+    modalStack.push(me);
     const fn = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') ref.current();
+      if (e.key === 'Escape' && modalStack[modalStack.length - 1] === me) ref.current();
     };
     window.addEventListener('keydown', fn);
     const prev = document.body.style.overflow;
@@ -222,6 +227,8 @@ export function Modal({
     return () => {
       window.removeEventListener('keydown', fn);
       document.body.style.overflow = prev;
+      const i = modalStack.indexOf(me);
+      if (i >= 0) modalStack.splice(i, 1);
     };
   }, [open]);
   const maxW = wide === 'xl' ? 'sm:max-w-5xl' : wide ? 'sm:max-w-3xl' : 'sm:max-w-lg';

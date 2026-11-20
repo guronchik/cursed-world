@@ -17,6 +17,7 @@ import { renderMarkdown } from '../lib/markdown';
 import { go, setQuery, useRoute } from '../lib/router';
 import { L } from '../lib/runtime';
 import { bestOf } from '../lib/stats';
+import { exerciseMenu } from '../pages/taijutsu/train';
 
 export function EntityHost() {
   const { query } = useRoute();
@@ -246,10 +247,15 @@ function ExercisePage({ id }: { id: string }) {
   const ntitle = all.find((x) => x.id === nid)?.title;
   return (
     <EntityLayout
-      kind={L('Упражнение', 'Exercise')}
+      kind={L('Упражнение', 'Exercise') + (ex.isCustom ? ' · Custom' : '') + (ex.archived ? ` · ${L('в архиве', 'archived')}` : '')}
       title={ex.name}
       onClose={closeEntity}
-      actions={<IBtn icon="edit" title={L('Изменить', 'Edit')} onClick={() => setQuery('ex', ex.id)} />}
+      actions={
+        <>
+          <IBtn icon="edit" title={L('Изменить', 'Edit')} onClick={() => setQuery('ex', ex.id)} />
+          <IBtn icon="more" title={L('Действия', 'Actions')} onClick={() => void exerciseMenu(ex, { onEdit: () => setQuery('ex', ex.id), after: closeEntity })} />
+        </>
+      }
       hero={ex.photoId ? <BlobImg id={ex.photoId} className="w-full h-[28vh] object-cover" /> : undefined}
       meta={
         <div className="space-y-4">

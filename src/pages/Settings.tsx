@@ -7,6 +7,7 @@ import { Btn, Field, FilePick, ImagePick, PageTitle, Panel, Seg, Toggle } from '
 import { exportAll, importAll } from '../db/backup';
 import { db, patchSettings } from '../db/schema';
 import { initEmpty, seedDemo, wipeAll } from '../db/seed';
+import { restoreDemoTraining } from '../lib/training';
 import { fmt } from '../lib/dates';
 import { confirmBox, toast } from '../lib/fx';
 import { GRADE_COLOR, gradeHint, gradeName, GRADES, type Grade } from '../lib/grade';
@@ -241,6 +242,17 @@ export function SettingsPage() {
                 }}
               >
                 {L('Сбросить к демо', 'Reset to demo')}
+              </Btn>
+              <Btn
+                size="sm"
+                variant="ghost"
+                icon="dumbbell"
+                onClick={async () => {
+                  if (!(await confirmBox(L('Восстановить демо-упражнения и демо-планы Black Flash, которых сейчас нет? Твои записи и изменения не тронутся.', 'Restore missing Black Flash demo exercises and plans? Your own data stays as is.')))) return;
+                  await restoreDemoTraining();
+                }}
+              >
+                {L('Восстановить демо-данные (зал)', 'Restore demo data (gym)')}
               </Btn>
               <Btn
                 size="sm"

@@ -73,8 +73,13 @@ export function adherence(days: number, routines: Routine[], rlogs: RoutineLog[]
 
 export const e1rm = (w: number, r: number) => (r <= 1 ? w : w * (1 + r / 30));
 
+/** Тоннаж в кг (фунты переводятся; для времени и дистанции вес не считается). */
 export function tonnage(w: Workout) {
-  return w.entries.reduce((s, e) => s + e.sets.reduce((a, x) => a + x.weight * x.reps, 0), 0);
+  return w.entries.reduce((s, e) => {
+    if (e.kind === 'time' || e.kind === 'distance') return s;
+    const k = e.unit === 'lb' ? 0.45359237 : 1;
+    return s + e.sets.reduce((a, x) => a + (x.weight || 0) * k * (x.reps || 0), 0);
+  }, 0);
 }
 
 export function prCount(w: Workout) {
@@ -85,6 +90,9 @@ export function prCount(w: Workout) {
 export function bestOf(workouts: Workout[], exerciseId: string, excludeId?: string) {
   let maxWeight = 0;
   let best1rm = 0;
+  let maxReps = 0;
+  let maxTime = 0;
+  let maxDist = 0;
   let has = false;
   for (const w of workouts) {
     if (w.id === excludeId) continue;
@@ -92,12 +100,15 @@ export function bestOf(workouts: Workout[], exerciseId: string, excludeId?: stri
       if (e.exerciseId !== exerciseId) continue;
       for (const s of e.sets) {
         has = true;
-        maxWeight = Math.max(maxWeight, s.weight);
-        best1rm = Math.max(best1rm, e1rm(s.weight, s.reps));
+        maxWeight = Math.max(maxWeight, s.weight || 0);
+        best1rm = Math.max(best1rm, e1rm(s.weight || 0, s.reps || 0));
+        maxReps = Math.max(maxReps, s.reps || 0);
+        maxTime = Math.max(maxTime, s.time || 0);
+        maxDist = Math.max(maxDist, s.dist || 0);
       }
     }
   }
-  return { maxWeight, best1rm, has };
+  return { maxWeight, best1rm, maxReps, maxTime, maxDist, has };
 }
 
 export function practiceDates(logs: PracticeLog[], techniqueId: string) {

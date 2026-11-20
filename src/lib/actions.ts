@@ -104,12 +104,19 @@ export async function setMedLog(med: Med, date: string, time: string, status: 't
 export async function startWorkout(templateId?: string, date = dayKey()) {
   const t = templateId ? await db.templates.get(templateId) : undefined;
   const id = uid();
+  // ссылки на удалённые упражнения пропускаем; в каждую запись — снимок названия (история не зависит от библиотеки)
+  const exs = new Map((await db.exercises.bulkGet((t?.items || []).map((i) => i.exerciseId))).filter((e): e is NonNullable<typeof e> => !!e).map((e) => [e.id, e]));
   await db.workouts.put({
     id,
     date,
     name: t?.name || L('Тренировка', 'Workout'),
     templateId: t?.id,
-    entries: (t?.items || []).map((i) => ({ id: uid(), exerciseId: i.exerciseId, sets: [] })),
+    entries: (t?.items || [])
+      .filter((i) => exs.has(i.exerciseId))
+      .map((i) => {
+        const ex = exs.get(i.exerciseId)!;
+        return { id: uid(), exerciseId: i.exerciseId, sets: [], name: ex.name, kind: ex.kind || 'weight', unit: ex.unit || 'kg' };
+      }),
     notes: '',
     finished: false,
     createdAt: Date.now(),

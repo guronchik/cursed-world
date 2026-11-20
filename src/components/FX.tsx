@@ -252,7 +252,7 @@ export function FXLayer() {
           />
         )}
       </AnimatePresence>
-      <div className="fixed left-1/2 -translate-x-1/2 bottom-24 lg:bottom-6 z-[98] flex flex-col items-center gap-2 pointer-events-none w-[min(92vw,420px)]">
+      <div className={`fixed left-1/2 -translate-x-1/2 bottom-24 lg:bottom-6 ${confirm || choose ? 'z-[96]' : 'z-[98]'} flex flex-col items-center gap-2 pointer-events-none w-[min(92vw,420px)]`}>
         <AnimatePresence>
           {toasts.map((t) => (
             <motion.div

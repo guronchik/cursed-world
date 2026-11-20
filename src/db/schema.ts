@@ -1,3 +1,4 @@
+import { fx } from '../lib/fx';
 import Dexie, { type Table } from 'dexie';
 import type { Grade } from '../lib/grade';
 import { upgradeToV3 } from './migrate3';
@@ -45,6 +46,8 @@ export interface Settings {
   pusherBlobId?: string; // свой PNG/SVG вместо человечка в прелоадере
   avatarBlobId?: string; // свой аватар/сигил для сцены «Большие цифры»
   yearManifest?: Record<string, string>; // манифест года: '2026' → текст
+  // ── v5: демо-данные загружаются один раз; после этого удалённые демо-записи не возвращаются ──
+  seeded?: boolean;
 }
 
 export type AnimLevel = 'cinematic' | 'smooth' | 'minimal' | 'off';
@@ -407,18 +410,31 @@ export interface MedLog {
   at: number;
 }
 
-export type Muscle = 'chest' | 'back' | 'legs' | 'shoulders' | 'arms' | 'core' | 'full';
+export type Muscle = 'chest' | 'back' | 'legs' | 'shoulders' | 'arms' | 'core' | 'full' | 'other';
+/** Как считается упражнение: вес × повторы, собственный вес (повторы, можно с отягощением), время, дистанция. */
+export type ExerciseKind = 'weight' | 'bodyweight' | 'time' | 'distance';
+export type WeightUnit = 'kg' | 'lb';
 
 export interface Exercise {
   id: string;
   name: string;
   muscle: Muscle;
+  muscleCustom?: string; // своя группа мышц (когда muscle = 'other')
   photoId?: string;
   videoUrl?: string;
   videoBlobId?: string;
   notes: string;
   targetWeight?: number;
   createdAt: number;
+  // ── v5 ──
+  isCustom?: boolean; // создано мной (не из демо)
+  archived?: boolean; // скрыто из библиотеки и выбора, история цела
+  equipment?: string;
+  kind?: ExerciseKind; // по умолчанию 'weight'
+  unit?: WeightUnit; // по умолчанию 'kg'
+  defSets?: number;
+  defReps?: number;
+  defRest?: number; // отдых, секунды
 }
 
 export interface WorkoutSet {
@@ -426,12 +442,19 @@ export interface WorkoutSet {
   reps: number;
   weight: number;
   pr?: boolean;
+  time?: number; // секунды (тип «время»)
+  dist?: number; // км (тип «дистанция»)
 }
 
 export interface WorkoutEntry {
   id: string;
   exerciseId: string;
   sets: WorkoutSet[];
+  // ── v5: снимок упражнения — история и графики не ломаются, даже когда упражнения уже нет ──
+  name?: string;
+  kind?: ExerciseKind;
+  unit?: WeightUnit;
+  oneOff?: boolean; // разовое упражнение, не сохранено в библиотеку
 }
 
 export interface Workout {
@@ -445,10 +468,25 @@ export interface Workout {
   createdAt: number;
 }
 
+export interface TemplateItem {
+  id?: string; // v5: стабильный ключ для перетаскивания
+  exerciseId: string;
+  sets: number;
+  reps: number;
+  weight?: number; // вес по умолчанию для этого плана
+}
+
+/** План тренировки (в коде исторически — template). Дни недели хранятся в settings.trainingPlan. */
 export interface Template {
   id: string;
   name: string;
-  items: { exerciseId: string; sets: number; reps: number }[];
+  items: TemplateItem[];
+  // ── v5 ──
+  color?: string;
+  icon?: string;
+  archived?: boolean;
+  createdAt?: number;
+  order?: number;
 }
 
 export interface BodyWeight {
@@ -637,7 +675,77 @@ export class CursedDB extends Dexie {
         await fillSettings(tx);
         await upgradeToV4(tx);
       });
+    // v5: свои упражнения, архив, снимки названий в журнале, порядок и цвет планов. Индексы те же, ничего не удаляется.
+    this.version(5)
+      .stores({ ...V1_STORES, ...V2_STORES, ...V3_STORES, ...V4_STORES })
+      .upgrade(async (tx) => {
+        await fillSettings(tx);
+        await upgradeToV5(tx);
+      });
   }
+}
+
+/** Демо-упражнения и планы (id детерминированные). Всё остальное считается своим (isCustom). */
+export const DEMO_EXERCISE_NAMES: Record<string, string> = {
+  'e-bench': 'Жим лёжа',
+  'e-ohp': 'Жим стоя',
+  'e-tri': 'Французский жим',
+  'e-dead': 'Становая тяга',
+  'e-pull': 'Подтягивания (доп. вес)',
+  'e-row': 'Тяга штанги в наклоне',
+  'e-curl': 'Подъём штанги на бицепс',
+  'e-squat': 'Приседания со штангой',
+  'e-rdl': 'Румынская тяга',
+  'e-lunge': 'Выпады с гантелями',
+};
+export const DEMO_EXERCISE_IDS = Object.keys(DEMO_EXERCISE_NAMES);
+export const DEMO_PLAN_IDS = ['tp-push', 'tp-pull', 'tp-legs'];
+
+/**
+ * v4 → v5. Повторный вызов безопасен (импорт старых копий).
+ * - упражнения: isCustom / createdAt / archived;
+ * - записи журнала получают снимок названия, типа и единиц;
+ * - из планов убираются ссылки на уже удалённые упражнения (раньше они «воскресали» как «Удалённое упражнение»);
+ * - у пунктов плана появляется id, у планов — createdAt и порядок;
+ * - settings.seeded = true: база уже заполнена, демо больше не загружается.
+ */
+export async function upgradeToV5(tx: { table: (n: string) => Table<any, string> }) {
+  const now = Date.now();
+  const demo = new Set(DEMO_EXERCISE_IDS);
+  const exs: Exercise[] = await tx.table('exercises').toArray();
+  const byId = new Map(exs.map((e) => [e.id, e]));
+  for (const e of exs) {
+    if (e.isCustom !== undefined && e.createdAt && e.archived !== undefined) continue;
+    await tx.table('exercises').put({ ...e, isCustom: e.isCustom ?? !demo.has(e.id), createdAt: e.createdAt || now, archived: !!e.archived });
+  }
+  const ws: Workout[] = await tx.table('workouts').toArray();
+  for (const w of ws) {
+    let changed = false;
+    const entries = w.entries.map((en) => {
+      if (en.name) return en;
+      const ex = byId.get(en.exerciseId);
+      if (!ex) {
+        // упражнение удалили до v5: для демо известно название, остальные остаются «удалёнными»
+        const demoName = DEMO_EXERCISE_NAMES[en.exerciseId];
+        if (!demoName) return en;
+        changed = true;
+        return { ...en, name: demoName, kind: 'weight' as const, unit: 'kg' as const };
+      }
+      changed = true;
+      return { ...en, name: ex.name, kind: ex.kind || 'weight', unit: ex.unit || 'kg' };
+    });
+    if (changed) await tx.table('workouts').put({ ...w, entries });
+  }
+  const tps: Template[] = await tx.table('templates').toArray();
+  let i = 0;
+  for (const t of tps) {
+    const items = t.items.filter((it) => byId.has(it.exerciseId)).map((it, k) => ({ ...it, id: it.id || `${t.id}-${k}-${it.exerciseId}` }));
+    await tx.table('templates').put({ ...t, items, createdAt: t.createdAt || now - (tps.length - i) * 1000, order: t.order ?? i });
+    i++;
+  }
+  await tx.table('settings').toCollection().modify((s: Settings) => {
+    s.seeded = true;
+  });
 }
 
 const V4_STORES = {
@@ -742,6 +850,20 @@ export async function upgradeToV2(tx: { table: (n: string) => Table<any, string>
 }
 
 export const db = new CursedDB();
+
+// Другая вкладка открыла базу новой версии (или эта вкладка устарела): закрываем соединение, иначе обновление схемы
+// повиснет, а записи (в том числе удаления) будут падать. Предлагаем перезагрузить страницу.
+const ru = () => typeof document === 'undefined' || document.documentElement.lang !== 'en';
+db.on('versionchange', () => {
+  db.close();
+  fx.emit({ type: 'toast', tone: 'warn', ms: 60000, text: ru() ? 'Сайт обновился в другой вкладке. Перезагрузи страницу, чтобы сохранять изменения.' : 'The app was updated in another tab. Reload to keep saving.', action: { label: ru() ? 'Перезагрузить' : 'Reload', run: () => location.reload() } });
+  return false;
+});
+// Обновление схемы ждёт, пока закроются старые вкладки.
+db.on('blocked', () => {
+  console.warn('[db] upgrade blocked by another tab');
+  fx.emit({ type: 'toast', tone: 'warn', ms: 15000, text: ru() ? 'Закрой другие вкладки CURSED WORLD — база обновляется.' : 'Close other CURSED WORLD tabs — the database is upgrading.' });
+});
 
 /** Таблицы, которые попадают в экспорт (всё, кроме blobs — они экспортируются отдельно в base64). */
 export const DATA_TABLES = [

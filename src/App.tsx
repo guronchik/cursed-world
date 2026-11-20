@@ -10,7 +10,7 @@ import { markBoot } from './lib/boot';
 import { toast } from './lib/fx';
 import { effectiveLevel, enableSmoothScroll, setFpsDropHandler, setMotionState } from './lib/motion';
 import { accentOf } from './lib/theme';
-import { seedDemo } from './db/seed';
+import { ensureSeeded } from './db/seed';
 import { setSemester } from './lib/calendar';
 import { MigrationReview } from './components/MigrationReview';
 import { startBackground } from './lib/background';
@@ -22,8 +22,7 @@ let bootPromise: Promise<void> | null = null;
 function boot() {
   bootPromise ??= (async () => {
     await db.open();
-    const s = await db.settings.get('app');
-    if (!s) await seedDemo();
+    await ensureSeeded();
     markBoot('db');
   })();
   return bootPromise;

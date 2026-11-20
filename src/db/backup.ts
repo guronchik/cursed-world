@@ -1,5 +1,5 @@
 // Резервная копия: все таблицы + все файлы (base64) в одном JSON.
-import { DATA_TABLES, db, upgradeToV2, upgradeToV4 } from './schema';
+import { DATA_TABLES, db, upgradeToV2, upgradeToV4, upgradeToV5 } from './schema';
 import { upgradeToV3 } from './migrate3';
 
 const toBase64 = (blob: Blob) =>
@@ -24,7 +24,7 @@ export async function exportAll() {
   for (const b of await db.blobs.toArray()) {
     blobs.push({ id: b.id, type: b.type, name: b.name, size: b.size, createdAt: b.createdAt, data: await toBase64(b.blob) });
   }
-  const payload = { app: 'cursed-world', version: 3, exportedAt: new Date().toISOString(), tables, blobs };
+  const payload = { app: 'cursed-world', version: 5, exportedAt: new Date().toISOString(), tables, blobs };
   return new Blob([JSON.stringify(payload)], { type: 'application/json' });
 }
 
@@ -57,5 +57,7 @@ export async function importAll(file: File) {
     await upgradeToV3(db as never);
     // копия до v4: колонки статусов и привязка видео по названию статуса
     await upgradeToV4(db as never);
+    // копия до v5: свои упражнения, архив, снимки названий в журнале; seeded — демо больше не подгружается
+    await upgradeToV5(db as never);
   });
 }

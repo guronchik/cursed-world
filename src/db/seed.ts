@@ -7,8 +7,11 @@ import { vowPower } from '../lib/stats';
 import {
   db,
   DEFAULT_SETTINGS,
+  DEMO_EXERCISE_NAMES,
   type Curse,
+  type Exercise,
   type MedLog,
+  type Template,
   type RoutineLog,
   type Workout,
   type WorkoutEntry,
@@ -217,24 +220,9 @@ export async function seedDemo() {
   }
 
   // ── Black Flash ──
-  const ex = [
-    { id: 'e-bench', name: 'Жим лёжа', muscle: 'chest' as const, targetWeight: 100, notes: 'Лопатки сведены и опущены, ноги в пол. Гриф — на низ груди, локти ~45°. Пауза касанием без отбива.' },
-    { id: 'e-ohp', name: 'Жим стоя', muscle: 'shoulders' as const, targetWeight: 60, notes: 'Ягодицы и пресс напряжены, голова «в окно» после прохода грифа.' },
-    { id: 'e-tri', name: 'Французский жим', muscle: 'arms' as const, targetWeight: 40, notes: '' },
-    { id: 'e-dead', name: 'Становая тяга', muscle: 'back' as const, targetWeight: 150, notes: 'Гриф над серединой стопы, спина нейтральная, «отталкиваю пол».' },
-    { id: 'e-pull', name: 'Подтягивания (доп. вес)', muscle: 'back' as const, targetWeight: 20, notes: 'Полная амплитуда, без раскачки.' },
-    { id: 'e-row', name: 'Тяга штанги в наклоне', muscle: 'back' as const, targetWeight: 80, notes: '' },
-    { id: 'e-curl', name: 'Подъём штанги на бицепс', muscle: 'arms' as const, targetWeight: 40, notes: '' },
-    { id: 'e-squat', name: 'Приседания со штангой', muscle: 'legs' as const, targetWeight: 130, notes: 'Колени по линии носков, глубина — бедро ниже параллели.' },
-    { id: 'e-rdl', name: 'Румынская тяга', muscle: 'legs' as const, targetWeight: 110, notes: '' },
-    { id: 'e-lunge', name: 'Выпады с гантелями', muscle: 'legs' as const, targetWeight: 26, notes: '' },
-  ];
-  await db.exercises.bulkPut(ex.map((e) => ({ ...e, createdAt: ago(60) })));
-  await db.templates.bulkPut([
-    { id: 'tp-push', name: 'Push', items: [{ exerciseId: 'e-bench', sets: 4, reps: 6 }, { exerciseId: 'e-ohp', sets: 3, reps: 8 }, { exerciseId: 'e-tri', sets: 3, reps: 12 }] },
-    { id: 'tp-pull', name: 'Pull', items: [{ exerciseId: 'e-dead', sets: 3, reps: 5 }, { exerciseId: 'e-pull', sets: 4, reps: 6 }, { exerciseId: 'e-row', sets: 3, reps: 8 }, { exerciseId: 'e-curl', sets: 3, reps: 10 }] },
-    { id: 'tp-legs', name: 'Legs', items: [{ exerciseId: 'e-squat', sets: 4, reps: 6 }, { exerciseId: 'e-rdl', sets: 3, reps: 8 }, { exerciseId: 'e-lunge', sets: 3, reps: 10 }] },
-  ]);
+  const demoTr = demoTraining(ago(60));
+  await db.exercises.bulkPut(demoTr.exercises);
+  await db.templates.bulkPut(demoTr.templates);
   const startW: Record<string, number> = { 'e-bench': 75, 'e-ohp': 45, 'e-tri': 30, 'e-dead': 120, 'e-pull': 7.5, 'e-row': 65, 'e-curl': 30, 'e-squat': 95, 'e-rdl': 80, 'e-lunge': 18 };
   const step: Record<string, number> = { 'e-bench': 2.5, 'e-ohp': 2.5, 'e-tri': 2.5, 'e-dead': 5, 'e-pull': 2.5, 'e-row': 2.5, 'e-curl': 2.5, 'e-squat': 5, 'e-rdl': 5, 'e-lunge': 2 };
   const tpl = { 0: ['tp-push', 'Push', ['e-bench', 'e-ohp', 'e-tri']], 2: ['tp-pull', 'Pull', ['e-dead', 'e-pull', 'e-row', 'e-curl']], 4: ['tp-legs', 'Legs', ['e-squat', 'e-rdl', 'e-lunge']] } as Record<number, [string, string, string[]]>;
@@ -257,7 +245,7 @@ export async function seedDemo() {
         if (best[eid] === undefined || weight > best[eid]) best[eid] = weight;
         return { id: uid(), reps, weight, pr };
       });
-      return { id: uid(), exerciseId: eid, sets };
+      return { id: uid(), exerciseId: eid, sets, name: demoTr.exercises.find((x) => x.id === eid)?.name, kind: 'weight' as const, unit: 'kg' as const };
     });
     const id = uid();
     workouts.push({ id, date: dayKey(day), name, templateId: tid, entries, notes: '', finished: true, createdAt: day.getTime() });
@@ -346,7 +334,7 @@ export async function seedDemo() {
   addXp(`review:${lastWeek}`, 40, 'Weekly Review', 'review', ago(5));
 
   await db.xp.bulkPut(xp);
-  await db.settings.put({ ...DEFAULT_SETTINGS(), campusMapId: mapId, targetBodyWeight: 78, trainingPlan: { '0': 'tp-push', '2': 'tp-pull', '4': 'tp-legs' } });
+  await db.settings.put({ ...DEFAULT_SETTINGS(), seeded: true, campusMapId: mapId, targetBodyWeight: 78, trainingPlan: { '0': 'tp-push', '2': 'tp-pull', '4': 'tp-legs' } });
   // v3: задания отдельно, пары → события слоя My, YouTube-задачи → страницы-видео
   await upgradeToV3(db as never, { fresh: true });
   // v4: колонки статусов YouTube Technique + ещё несколько демо-видео для галереи
@@ -368,6 +356,53 @@ export async function seedDemo() {
   ]);
 }
 
+/** Демо-упражнения и демо-планы. Обычные записи: их можно удалить, а вернуть — кнопкой в Settings. */
+export function demoTraining(createdAt = Date.now()): { exercises: Exercise[]; templates: Template[] } {
+  const ex: Omit<Exercise, 'createdAt'>[] = [
+    { id: 'e-bench', name: DEMO_EXERCISE_NAMES['e-bench'], muscle: 'chest', targetWeight: 100, notes: 'Лопатки сведены и опущены, ноги в пол. Гриф — на низ груди, локти ~45°. Пауза касанием без отбива.' },
+    { id: 'e-ohp', name: DEMO_EXERCISE_NAMES['e-ohp'], muscle: 'shoulders', targetWeight: 60, notes: 'Ягодицы и пресс напряжены, голова «в окно» после прохода грифа.' },
+    { id: 'e-tri', name: DEMO_EXERCISE_NAMES['e-tri'], muscle: 'arms', targetWeight: 40, notes: '' },
+    { id: 'e-dead', name: DEMO_EXERCISE_NAMES['e-dead'], muscle: 'back', targetWeight: 150, notes: 'Гриф над серединой стопы, спина нейтральная, «отталкиваю пол».' },
+    { id: 'e-pull', name: DEMO_EXERCISE_NAMES['e-pull'], muscle: 'back', targetWeight: 20, notes: 'Полная амплитуда, без раскачки.' },
+    { id: 'e-row', name: DEMO_EXERCISE_NAMES['e-row'], muscle: 'back', targetWeight: 80, notes: '' },
+    { id: 'e-curl', name: DEMO_EXERCISE_NAMES['e-curl'], muscle: 'arms', targetWeight: 40, notes: '' },
+    { id: 'e-squat', name: DEMO_EXERCISE_NAMES['e-squat'], muscle: 'legs', targetWeight: 130, notes: 'Колени по линии носков, глубина — бедро ниже параллели.' },
+    { id: 'e-rdl', name: DEMO_EXERCISE_NAMES['e-rdl'], muscle: 'legs', targetWeight: 110, notes: '' },
+    { id: 'e-lunge', name: DEMO_EXERCISE_NAMES['e-lunge'], muscle: 'legs', targetWeight: 26, notes: '' },
+  ];
+  const it = (tid: string, exerciseId: string, sets: number, reps: number) => ({ id: `${tid}-${exerciseId}`, exerciseId, sets, reps });
+  return {
+    exercises: ex.map((e) => ({ ...e, createdAt, isCustom: false, archived: false, kind: 'weight', unit: 'kg' })),
+    templates: [
+      { id: 'tp-push', name: 'Push', color: '#ff453a', icon: 'flame', order: 0, createdAt, items: [it('tp-push', 'e-bench', 4, 6), it('tp-push', 'e-ohp', 3, 8), it('tp-push', 'e-tri', 3, 12)] },
+      { id: 'tp-pull', name: 'Pull', color: '#0a84ff', icon: 'bolt', order: 1, createdAt, items: [it('tp-pull', 'e-dead', 3, 5), it('tp-pull', 'e-pull', 4, 6), it('tp-pull', 'e-row', 3, 8), it('tp-pull', 'e-curl', 3, 10)] },
+      { id: 'tp-legs', name: 'Legs', color: '#30d158', icon: 'dumbbell', order: 2, createdAt, items: [it('tp-legs', 'e-squat', 4, 6), it('tp-legs', 'e-rdl', 3, 8), it('tp-legs', 'e-lunge', 3, 10)] },
+    ],
+  };
+}
+
+/**
+ * Первый запуск: демо загружается ровно один раз — в одной транзакции и с проверкой внутри неё.
+ * Повторный вызов (StrictMode, hot reload, вторая вкладка) ничего не делает: настройки уже есть.
+ * Если настроек нет, но в базе уже есть данные (например, настройки потерялись), демо НЕ грузится —
+ * создаются только настройки, чтобы не перезаписать и не «воскресить» удалённое.
+ */
+export async function ensureSeeded() {
+  await db.transaction('rw', db.tables, async () => {
+    const s = await db.settings.get('app');
+    if (s) {
+      if (!s.seeded) await db.settings.put({ ...s, seeded: true });
+      return;
+    }
+    const counts = await Promise.all(['exercises', 'workouts', 'curses', 'notes', 'templates'].map((t) => db.table(t).count()));
+    if (counts.some((n) => n > 0)) {
+      await db.settings.put({ ...DEFAULT_SETTINGS(), seeded: true });
+      return;
+    }
+    await seedDemo();
+  });
+}
+
 export async function wipeAll() {
   await Promise.all(db.tables.map((t) => t.clear()));
 }
@@ -385,5 +420,5 @@ export async function initEmpty(lang: 'ru' | 'en' = 'ru') {
     { id: 'r-morning', slot: 'morning', name: lang === 'ru' ? 'Утренний уход' : 'Morning care', steps: [] },
     { id: 'r-evening', slot: 'evening', name: lang === 'ru' ? 'Вечерний уход' : 'Evening care', steps: [] },
   ]);
-  await db.settings.put({ ...DEFAULT_SETTINGS(), lang });
+  await db.settings.put({ ...DEFAULT_SETTINGS(), seeded: true, lang });
 }
