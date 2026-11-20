@@ -1,0 +1,229 @@
+# CURSED WORLD — личный life-OS в эстетике Jujutsu Kaisen
+
+Local-first PWA: дедлайны-проклятия, универ, уход за собой, зал, задачи, цели года и месяца, заметки и обеты.
+Все данные хранятся только у тебя в браузере (IndexedDB), работает офлайн, ставится на телефон.
+
+## Запуск
+
+Нужен Node.js 20+ (на Pop!_OS — через nvm: `. ~/.nvm/nvm.sh`).
+
+```bash
+npm install
+npm run dev        # http://localhost:5173 (флаг --host уже включён — откроется и с телефона по Wi‑Fi)
+```
+
+### Обновление с v1/v2 без потери данных
+
+Данные живут в браузере (IndexedDB) и привязаны к адресу сайта, а не к папке. Замени файлы проекта новыми
+и открой тот же адрес (например `http://localhost:5173`) — при первом запуске Dexie поднимет схему до **v2** и выполнит миграцию:
+допишет новые настройки со значениями по умолчанию, переведёт эмодзи-иконки папок в иконки,
+создаст пустые таблицы `kv`, `calSources`, `calEvents`. Существующие записи не удаляются и не меняются.
+Зависимости в `package.json` не менялись, поэтому `npm install` повторять не обязательно.
+Перед обновлением на всякий случай: **Settings → Export JSON**. Импорт копии из v1 тоже проходит ту же миграцию.
+
+**v4** поднимает схему до **4**: добавляет таблицу колонок `videoStatuses` (шесть стандартных колонок) и привязывает видео к колонкам по прежнему названию статуса; ничего не удаляется. Уровень анимаций берётся из прежних настроек («Отключены» → Minimal, Performance mode → без размытия).
+
+**v3** поднимает схему до **3** (таблицы `assignments`, `videos`, `docs`, `ideas`, новые поля событий). Миграция ничего не удаляет:
+- каждый Curse, который раньше был заданием или пришёл из ICS, получает отдельное задание в **Assignments** и остаётся связанным с ним;
+  при первом запуске один раз открывается окно «Обновление v3» — для каждого такого Curse можно выбрать «оставить как Curse» или «убрать из Curses»
+  (задание остаётся; без подтверждения ничего не удаляется);
+- шаблон пар (старое «Расписание») копируется в повторяющиеся занятия слоя **My** (числитель/знаменатель сохраняются), старая таблица остаётся нетронутой;
+- задачи YouTube Technique превращаются в страницы-видео; их Curses остаются и связаны с видео (переключатель «Сделать Curse» включён);
+- XP за уже выполненное переносится на новый ключ, поэтому повторно не начисляется.
+
+Продакшен-сборка (статичные файлы в `dist/`, можно положить на любой хостинг: Netlify, Vercel, GitHub Pages, свой сервер):
+
+```bash
+npm run build
+npm run preview    # проверить сборку локально
+```
+
+PWA и офлайн включаются в продакшен-сборке: service worker регистрируется только там.
+Установка на телефон и уведомления требуют **HTTPS** (или localhost), поэтому для телефона удобнее задеплоить `dist/`.
+`npm run typecheck` — дополнительная проверка TypeScript; на сборку она не влияет.
+
+При первом запуске загружаются демо-данные (по 2–3 примера в каждом разделе).
+Убрать их: **Settings → «Чистый старт»**, вернуть: **«Сбросить к демо»**.
+
+## Допущения (решения, принятые без вопросов)
+
+1. **Один пользователь, одно устройство.** Синхронизации нет; перенос данных между устройствами — Export/Import JSON (в копию входят и файлы, в base64).
+2. **Задание из универа — это тоже Curse** (флаг `isAssignment`). Отдельной сущности нет, поэтому синхронизировать нечего: задание сразу попадает в Curses, календарь, грейды и XP.
+3. **Категория дедлайна = техника** (University, YouTube, Piano, Personal + свои). Cursed Technique и Curses показывают одни и те же задачи с разных сторон.
+4. **Грейд:** > 7 дн → Grade 4, 4–7 дн → 3, 2–3 дн → 2, < 48 ч → 1, < 12 ч / просрочено / важность 5 → Special. Важность 4 делает проклятие на грейд страшнее. Просроченные — с красной аурой.
+5. **Ранги шамана по XP:** Grade 4 (0) → Grade 3 (250) → Grade 2 (750) → Semi-Grade 1 (1750) → Grade 1 (3500) → Special Grade (7000).
+   XP: изгнание 10–50 (по грейду; просроченное — 5), квест ухода 10, все таблетки за день 10, тренировка 30 + 15 за каждый PR, практика до 40, Weekly Review 40, месячная цель 100, годовая 300, исполненный обет = Vow Power, нарушение −25.
+6. **Vow Power** = строгость^1.5 × 6 × √(дни) (× 1.5 для Heavenly Restriction). Обет автоматически становится «выполнен», когда заканчивается срок; «Я нарушил» записывает событие в историю; нарушенный обет можно перезаключить. Досрочное «выполнен» даёт XP пропорционально пройденному сроку.
+7. **PR** — новый максимальный вес или новый расчётный 1ПМ (формула Эпли) по упражнению при наличии истории. Первый подход в жизни рекордом не считается.
+8. **Расписание повторяется каждую неделю**, у пары можно указать «чётные / нечётные недели» (ISO-неделя).
+9. **Напоминания** (таблетки, дедлайн через час) работают, пока приложение открыто — во вкладке или как установленное PWA. Фоновых push без сервера в local-first-приложении не бывает.
+10. **PIN** — экран приватности (хэш с солью, автоблокировка в фоне). Данные в IndexedDB не шифруются — об этом есть пометка в настройках.
+11. **Превью ссылок** — через публичные noembed (YouTube) и microlink.io; отключается в настройках. Без сети — домен и favicon.
+12. **Своё видео упражнения** хранится как есть (без сжатия), фото сжимаются в WebP/JPEG до 1400–1600 px.
+13. Монстры, печати и иконки — **оригинальные SVG**, официальный арт не используется. Для каждого грейда можно загрузить свою картинку (Settings).
+14. Роутинг на hash (`#/curses?curse=id`) — работает офлайн и на любом статическом хостинге без настройки сервера.
+15. Вместо `dexie-react-hooks` и `vite-plugin-pwa` — свой маленький `useLive` поверх `liveQuery` и свой `public/sw.js`: меньше зависимостей, предсказуемый офлайн.
+
+### Допущения v4
+
+34. **Колонки статусов — таблица `videoStatuses`** (`id, name, color, order, isDone, key, createdAt`), видео ссылаются на неё через `statusId`. Схема Dexie поднята до **4**: создаются шесть стандартных колонок с постоянными id `vs-idea … vs-published` (у Published `isDone = true`), каждое видео привязывается по прежнему названию статуса; старое поле `status` остаётся в записи и в старых копиях. Видео без колонки показывается как «Без статуса» и ничего не ломает.
+35. **«Опубликовано» = видео в любой колонке с флагом Done.** Перенос в такую колонку закрывает связанный Curse и начисляет XP один раз (ключ `video:<id>`); вывод из Done-колонки (или снятие флага) XP отзывает. Прогресс карточки — по чек-листу пайплайна, без чек-листа — по положению колонки.
+36. **Управление колонками переиспользуемое** (`components/columns.tsx` + интерфейс `ColumnStore` в `lib/statuses.ts`): сейчас подключено только к YouTube Technique, University/Piano могут подключить свой store без переписывания интерфейса.
+37. **dnd-kit и Lenis не поставлены** (в среде сборки нет сети): перетаскивание колонок, карточек и строк — свои реализации на pointer-событиях; плавная прокрутка колеса — своя небольшая реализация (только `pointer: fine`, прокручивается сам документ, без скролл-джекинга, внутренние прокручиваемые области не трогаются). Framer Motion используется для layout-анимаций колонок; переходы, прелоадер, галерея и сцены — на Web Animations API и нативном скролле.
+38. **Settings → Анимации** заменяет прежние «Анимации: системно/вкл/выкл» и «Performance mode»: уровни Cinematic / Smooth / Minimal / Off, переключатели «свой курсор», «звуки» (по умолчанию выключены для новых установок; у существующих сохраняется прежний выбор), «эффекты размытия». Системный reduced-motion автоматически даёт Minimal. FPS-сторож снижает уровень на ступень, если во время анимаций средний FPS ниже 45 дольше 2 секунд; вернуть — там же.
+39. **Кинематографичный переход** — только при смене раздела верхнего уровня и при открытии крупной сущности (карточка галереи, Curse, видео, «Next …»); вкладки внутри раздела, листы и переключение видов — обычные быстрые. Уходящая страница во время занавеса видит свой прежний адрес, новая монтируется и грузит данные под занавесом.
+40. **Прелоадер** — раз за сессию (`sessionStorage`), не показывается при Minimal/Off и при системном reduced-motion; из PWA-иконки — укороченный (≤ 1 с). Тема и акцент берутся из прошлого запуска (`localStorage`), потому что база ещё не открыта.
+41. **Страницы сущностей** — `?page=curse:<id>`, `?page=assignment:<id>`, `?page=exercise:<id>` (видео — прежний `?v=<id>`); редактирование открывает существующие редакторы. «Next …» берёт порядок галереи/списка, откуда открыли.
+42. **DeskCard на «столе» Simple Domain** — показываются закреплённые заметки; положение сохраняется в поле `desk` заметки (новое необязательное поле, миграция не нужна).
+
+### Допущения v3
+
+28. **Задание и Curse — разные вещи.** Задания живут в Cursed Tools → Assignments. Связь хранится с двух сторон (`curseLinks`): у Curse поле `link {kind, id}`, у задания/видео — `curseId`. Переключатель «Сделать Curse» создаёт или удаляет связанный Curse; срок, название, выполнение синхронизируются в обе стороны. XP за выполнение — по одному ключу `assign:<id>` / `video:<id>`, поэтому начисляется один раз.
+29. **Дедлайны из ICS сами ничего не создают.** Они видны слоем «Дедлайны» и в **Inbox найденных дедлайнов** (Assignments и кнопка-«входящие» в календаре); добавлять можно пачкой. Отклонённые запоминаются по `источник|UID|RECURRENCE-ID` и при реимпорте не предлагаются.
+30. **Мои занятия — те же события календаря** (`sourceId = 'manual'`), повторы хранятся как RRULE (`FREQ=WEEKLY;BYDAY=MO,WE;INTERVAL=N;UNTIL=…`). Числитель/знаменатель — поле `parity`: по умолчанию по номеру ISO-недели (нечётная = числитель), в «Семестре» можно считать недели от начала семестра. «Весь семестр» — повтор до даты конца семестра из настроек. В каникулы и праздничные недели пары не показываются.
+31. **Правка повтора как в iOS:** «только это» — отдельная запись-исключение (как RECURRENCE-ID в ICS), «это и следующие» — серия делится на две, «все» — меняется вся серия. Занятия из ICS правятся так же; ручные правки помечаются и при реимпорте не затираются.
+32. **YouTube Technique — база видео.** Каждое видео — запись `videos` + страница `docs` (массив блоков). Ideas и Notes хранятся в самом видео. Idea Inbox — таблица `ideas`. Шаблоны страниц и свои свойства — в `kv`. Видео с дедлайном показывается монстром только внутри YouTube Technique, в Curses — только с переключателем.
+33. **Редактор блоков свой** (TipTap/BlockNote без сети не поставить): contentEditable, `/`-меню, `@` и `[[` для ссылок на страницы, markdown-сокращения в начале строки (`#`, `##`, `###`, `-`, `1.`, `[]`, `>` — цитата, `>>` — раскрывающийся блок, `!` — callout, `---` — разделитель), перетаскивание за ⠿, Ctrl+B/I/U, Ctrl+K — ссылка, Ctrl+Shift+H — выделение цветом. HTML внутри блоков проходит через белый список тегов.
+
+### Допущения v2
+
+16. **Без новых зависимостей.** ical.js, dnd-kit и lucide заменены своими реализациями: парсер ICS (`lib/ics.ts`, RFC 5545: VEVENT/VTODO, RRULE с BYDAY/BYMONTHDAY/BYMONTH/COUNT/UNTIL/INTERVAL, EXDATE, RECURRENCE-ID, VTIMEZONE, all-day), перетаскивание виджетов на pointer-событиях, иконки в стиле SF Symbols (`components/Icon.tsx`). `npm install` не нужен заново, ничего не тянется из сети.
+17. **Тема по умолчанию тёмная**, стиль Apple: стекло (blur + saturate), тонкие границы, скругления 20–28 px. Угловатые рамки, глитч и зерно — переключатель **JJK FX** (по умолчанию выключен). **Performance mode** убирает blur и тяжёлые тени.
+18. **Цвет вкладки = пара градиентов** `--accent-1/--accent-2`. Цвет текста на акценте выбирается автоматически по контрасту WCAG AA.
+19. **Обои**: 12 встроенных рисуются кодом (SVG/градиенты, без внешних картинок и официального арта). «Авто» = «Чернила» в тёмной теме и «Точки» в светлой. Свои фото сжимаются до 1920 px (WebP) и лежат в IndexedDB.
+20. **Главная — виджеты.** Сетка 2 колонки на телефоне, 4 на планшете, 6 на ПК; размеры S (1×1), M (2×1), L (2×2), XL (4×2, только ПК, на меньших экранах становится L). Раскладка хранится в `kv['home-layout']`.
+21. **Календарь AITU** — часть Cursed Tools (вкладка Calendar, бывшее «Расписание» стало видом «Пары»). Часовой пояс по умолчанию — Asia/Almaty, если в ICS нет TZID/Z.
+22. **Что считается дедлайном:** VTODO с DUE или событие, в названии которого есть ключевое слово из списка (Settings → Календарь). Дедлайн создаёт Curse с бейджем источника и предметом в названии; предметы создаются из CATEGORIES Moodle («Курс | Преподаватель») или названия пары. Для прошедших более 7 дней назад Curse не создаётся.
+23. **Повторный импорт** обновляет события по `UID + RECURRENCE-ID`. Если событие правил ты (`locallyEdited`), а в ICS пришла новая версия — оно помечается конфликтом и в редакторе предлагается «Оставить моё / Взять из ICS». Скрытые события при обновлении не возвращаются (вернуть — в «Источниках»). События, исчезнувшие из ICS, удаляются, только если они в будущем, не повторяются и не правились вручную.
+24. **Ссылки-подписки Moodle** браузер часто не может скачать из-за CORS — тогда показываем объяснение и варианты: файл, вставка текста или свой прокси (готовый Cloudflare Worker — `tools/ics-proxy-worker.js`).
+25. **AITU Map** — чужая карта, встроенная через iframe с указанием автора; её код не копируется. Параметр поиска аудитории (deep-link) у неё неизвестен, поэтому «Найти на карте» копирует номер аудитории в буфер и открывает карту; если у карты есть параметр — укажи шаблон с `{room}` в Settings → Календарь. Офлайн открывается My Map (своя карта с пинами).
+26. **Напоминания о парах и дедлайнах** (за N минут из настроек) работают, пока приложение открыто или работает в фоне как PWA. На iPhone — только после «На экран «Домой»», iOS 16.4+.
+27. **Шрифт Jujutsu Kaisen** содержит только латиницу (и в оригинальном файле был водяной знак в символе «·» — он вырезан). По умолчанию шрифт стоит на заголовках, режим «Весь текст» включается в настройках. Формат — woff + ttf (woff2 собрать здесь было нечем).
+
+## Архитектура
+
+```
+src/
+  main.tsx, App.tsx         загрузка, демо-сид, настройки, тема (dark/light/auto), JJK FX, Performance mode
+  index.css                 дизайн-система: Tailwind v4 @theme на CSS-переменных, стекло, segmented, iOS-переключатели, JJK FX
+  db/
+    schema.ts               типы всех сущностей + Dexie (IndexedDB), схема v2 + миграция upgradeToV2
+    seed.ts                 демо-данные относительно текущей даты, «чистый старт»
+    backup.ts               Export / Import JSON (вместе с файлами)
+  lib/
+    grade.ts                грейды проклятий
+    xp.ts                   ранги, начисление/отзыв XP по уникальному ключу
+    actions.ts              доменные операции: exorcise, квесты, таблетки, тренировки, обеты, быстрый ввод
+    stats.ts                стрики, соблюдение, тоннаж, PR, прогресс целей, Vow Power
+    background.ts           напоминания (таблетки, пары, дедлайны), авто-статусы обетов, автообновление ICS-подписок
+    ics.ts                  парсер/генератор iCalendar, часовые пояса, разворачивание RRULE
+    calendar.ts             импорт ICS → события и Curses, конфликты, подписки, экспорт .ics
+    theme.ts, settings.ts   акценты вкладок, пресеты, контраст AA, встроенные обои
+    mapLink.ts              «Найти на карте»: пин My Map или аудитория в AITU Map
+    dates.ts, uni.ts        даты (date-fns, RU/EN), пары и «следующая пара»
+    fx.ts, sound.ts         шина эффектов (exorcise, BLACK FLASH, rank up, тосты), WebAudio-звуки
+    media.ts, links.ts      blob-хранилище и сжатие картинок, превью ссылок / YouTube
+    markdown.ts, pin.ts, router.ts, hooks.ts, runtime.ts (язык RU/EN)
+  components/
+    Shell.tsx               навигация: стеклянный сайдбар или Dock на ПК, iOS tab bar + «More» на телефоне
+    Wallpaper.tsx           слой обоев (blur, затемнение, Dynamic по времени суток)
+    CommandPalette.tsx      Ctrl+K: поиск по всему и быстрое добавление
+    CurseEditor.tsx         редактор дедлайна (подзадачи, вложения, ссылки, цель, задание)
+    Monster.tsx, Seal.tsx   оригинальные монстры 5 грейдов, проклятые печати
+    FX.tsx, PinGate.tsx, ui.tsx, shared.tsx (календарь-сетка, тепловая карта, таймер), charts.tsx
+  pages/
+    home/Home.tsx, home/widgets.tsx Jujutsu HQ: редактируемые виджеты (21 тип), раскладки
+    Curses.tsx, CalendarPage.tsx    Curses (список / грейды / календарь), единый календарь
+    tools/                          Cursed Tools: Calendar (AITU ICS + Schedule), CampusMap (AITU Map | My Map), Assignments, Grades
+    settings/Appearance.tsx         Settings → Внешний вид, обои, календарь и напоминания
+    taijutsu/                       Divergent Fist (уход, таблетки), Black Flash (журнал, статистика, фото, календарь, библиотека)
+    energy/                         Cursed Technique, Reversed CT, Maximum Technique, Domain Expansion, Simple Domain
+    Vows.tsx, WeeklyReview.tsx, Settings.tsx
+public/  sw.js (офлайн), manifest.webmanifest, иконки, fonts/, samples/aitu.ics, wallpapers/ (свои обои)
+tools/   ics-proxy-worker.js — CORS-прокси для ICS-подписок (Cloudflare Workers)
+```
+
+### Как связаны сущности
+
+```
+Goal(year)  ── Domain Expansion ── прогресс = среднее месячных целей
+  └─ Goal(month) ── Maximum Technique ── прогресс = изгнанные / все связанные Curses
+       └─ Curse ── Cursed Technique (techniqueId) ── задача-монстр, грейд по дедлайну
+            ├─ isAssignment + subjectId ── Cursed Tools → Assignments
+            └─ subtasks, attachments(blobId), links
+Subject ── ClassSlot (расписание) ── pinId → MapPin (карта кампуса)
+Routine ── RoutineLog (дата, шаги)       Med ── MedLog (дата, время, принял/пропустил)
+Exercise ── Workout.entries[].sets[] (PR)   Template ── Settings.trainingPlan (день недели)
+Technique(trackMinutes) ── PracticeLog, Piece      Folder ── SaveItem (RCT)
+Vow(kind: vow | restriction, parentVowId, goalId) ── history[]
+XpEvent (ключ = источник, начисляется один раз)    Review (W:неделя / M:месяц)    Blob (все файлы)
+```
+
+## Шаги из ТЗ — где что лежит
+
+| Шаг | Что сделано | Файлы |
+|---|---|---|
+| 1 | каркас, дизайн-система, навигация, база, Jujutsu HQ | `App.tsx`, `index.css`, `components/*`, `db/*`, `pages/HQ.tsx` |
+| 2 | Curses, Cursed Tools, единый календарь | `pages/Curses.tsx`, `pages/tools/*`, `pages/CalendarPage.tsx` |
+| 3 | Taijutsu: Divergent Fist и Black Flash | `pages/taijutsu/*` |
+| 4 | Cursed Energy Manipulation, все 5 подразделов | `pages/energy/*` |
+| 5 | Binding Vow, XP, Weekly Review, PWA, экспорт/импорт | `pages/Vows.tsx`, `lib/xp.ts`, `pages/WeeklyReview.tsx`, `public/sw.js`, `db/backup.ts`, `pages/Settings.tsx` |
+
+### v4
+
+| Шаг | Что сделано | Файлы |
+|---|---|---|
+| 1 | Таблица `videoStatuses`, миграция v4, все виды/статистика/шаблон/Inbox на динамических колонках | `db/schema.ts`, `lib/videoMeta.ts`, `lib/statuses.ts`, `lib/videos.ts`, `lib/linked.ts`, `pages/energy/youtube/*`, `pages/energy/CursedTechnique.tsx`, `db/seed.ts`, `db/backup.ts` |
+| 2 | Колонки на доске: добавить, переименовать, цвет, Done, сдвиг, удаление с переносом/Undo, перетаскивание, окно «Колонки», телефон | `components/columns.tsx`, `pages/energy/youtube/views.tsx`, `pages/energy/youtube/YouTube.tsx`, `lib/fx.ts`, `components/FX.tsx`, `index.css` |
+| 3 | Движок анимаций: токены, уровни, FPS-сторож, BlurText, плавный скролл, курсор, переходы с занавесом, часы/следующая пара/звук | `lib/motion.ts`, `lib/transition.ts`, `components/PageStage.tsx`, `components/BlurText.tsx`, `components/Cursor.tsx`, `components/TopBar.tsx`, `lib/router.ts`, `lib/sound.ts`, `App.tsx`, `components/Shell.tsx`, `pages/settings/Appearance.tsx`, `pages/Settings.tsx` |
+| 4 | Прелоадер и каскад главной | `components/Preloader.tsx`, `lib/boot.ts`, `main.tsx`, `components/Wallpaper.tsx`, `pages/home/Home.tsx` |
+| 5 | TiltGallery: Curses (вид по умолчанию), Black Flash, YouTube, обои, папки Reversed | `components/TiltGallery.tsx`, `pages/CurseGallery.tsx`, `pages/Curses.tsx`, `pages/taijutsu/FlashMore.tsx`, `pages/energy/youtube/views.tsx`, `pages/settings/Appearance.tsx`, `pages/energy/ReversedCT.tsx` |
+| 6 | Страница сущности: мета, мини-карта, огромный заголовок, Next item — Curse, видео, задание, упражнение | `components/EntityLayout.tsx`, `components/EntityHost.tsx`, `lib/entity.ts`, `pages/energy/youtube/VideoPage.tsx` |
+| 7 | BigNumberStage (Domain Expansion, Weekly Review), DeskCard (Binding Vow, Reversed, Simple Domain) | `components/BigNumberStage.tsx`, `components/DeskCard.tsx`, `pages/energy/DomainExpansion.tsx`, `pages/WeeklyReview.tsx`, `pages/Vows.tsx`, `pages/energy/ReversedCT.tsx`, `pages/energy/SimpleDomain.tsx` |
+| 8 | Мобильная полировка, доступность, проверки | `index.css`, `components/ui.tsx` |
+
+### v3
+
+| Шаг | Что сделано | Файлы |
+|---|---|---|
+| 1 | Assignments отдельно от Curses, «Сделать Curse», Inbox дедлайнов, окно проверки после миграции | `db/schema.ts`, `db/migrate3.ts`, `lib/linked.ts`, `pages/tools/Assignments.tsx`, `components/MigrationReview.tsx`, `components/CurseEditor.tsx`, `components/shared.tsx`, `lib/actions.ts`, `App.tsx` |
+| 2 | Свои занятия: «+», тап по пустому слоту, долгое нажатие, повторы, числитель/знаменатель, семестр и каникулы, копия недели, «только это / следующие / все», пропуск, перенос, пересечения, перетаскивание и растягивание, слои AITU / My / Assignments / Дедлайны | `lib/events.ts`, `lib/calendar.ts`, `pages/tools/Calendar.tsx`, `pages/tools/EventSheet.tsx`, `pages/tools/SemesterSheet.tsx`, `components/SubjectPicker.tsx`, `pages/home/widgets.tsx`, `pages/CalendarPage.tsx`, `lib/background.ts` |
+| 3 | YouTube Technique: Board / Table / Week / Calendar / Gallery, поиск, фильтры, сортировка, группировка, свои свойства | `pages/energy/youtube/YouTube.tsx`, `pages/energy/youtube/views.tsx`, `lib/videoMeta.ts`, `lib/videos.ts`, `pages/energy/CursedTechnique.tsx` |
+| 4 | Страница видео с редактором блоков, Ideas, Notes, Idea Inbox, шаблоны, ссылки и backlinks | `components/BlockEditor.tsx`, `pages/energy/youtube/VideoPage.tsx`, `lib/blocks.ts`, `index.css` |
+| 5 | Статистика, экспорт в Markdown/JSON, мобильная проверка 360–430, миграция | `lib/videos.ts`, `db/backup.ts`, `components/shared.tsx`, `db/seed.ts` |
+
+### v2
+
+| Шаг | Что сделано | Файлы |
+|---|---|---|
+| 1 | Apple-дизайн: стекло, темы, акценты вкладок, обои, JJK FX, Performance mode, иконки без эмодзи, Dock, iOS tab bar, bottom sheets со свайпом, swipe-строки | `index.css`, `lib/theme.ts`, `lib/settings.ts`, `components/Shell.tsx`, `components/Wallpaper.tsx`, `components/ui.tsx`, `components/Icon.tsx`, `components/shared.tsx`, `components/nav.ts`, `App.tsx`, `pages/settings/Appearance.tsx`, `pages/Settings.tsx` |
+| 2 | Главная из виджетов: редактирование, перетаскивание, размеры, галерея, раскладки | `pages/home/Home.tsx`, `pages/home/widgets.tsx` (вместо `pages/HQ.tsx`) |
+| 3 | Календарь AITU: импорт ICS (файл/ссылка/текст), виды День/Неделя/Месяц/Agenda/Пары, правка и перенос, конфликты, слои, экспорт, напоминания | `lib/ics.ts`, `lib/calendar.ts`, `pages/tools/Calendar.tsx`, `pages/tools/index.tsx`, `pages/CalendarPage.tsx`, `lib/background.ts`, `tools/ics-proxy-worker.js` |
+| 4 | Campus Map: AITU Map (iframe) / My Map, «Найти на карте» | `pages/tools/AitumMap.tsx`, `pages/tools/CampusMap.tsx`, `lib/mapLink.ts`, `pages/tools/Schedule.tsx` |
+| 5 | Миграция Dexie v2, мобильная полировка, офлайн-кэш всех страниц | `db/schema.ts`, `db/backup.ts`, `vite.config.ts`, `public/sw.js`, `index.html` |
+
+## Календарь AITU (Moodle)
+
+1. Moodle → **Календарь** → **Экспорт календаря** → выбери события и период.
+2. Либо «Экспорт» → скачай `.ics` → в приложении **Cursed Tools → Calendar → Импорт → Файл**;
+   либо «Получить URL календаря» → **Импорт → Ссылка** (обновляется при открытии, не чаще раза в N часов).
+3. Если ссылка не грузится (CORS), разверни прокси:
+   - зайди на dash.cloudflare.com → Workers & Pages → Create → Worker → вставь код из `tools/ics-proxy-worker.js` → Deploy;
+   - если домен Moodle другой — добавь его в `ALLOWED_HOSTS`;
+   - в приложении: **Settings → Календарь → Прокси** = `https://<имя>.<аккаунт>.workers.dev/?url={url}`.
+4. Проверить без Moodle: **Импорт → Файл → «Тестовый AITU.ics»** (9 дедлайнов из приложенного файла).
+
+## Свои обои
+
+Положи картинки в `public/wallpapers/` — они появятся в **Settings → Внешний вид → Обои** (список собирается автоматически в `wallpapers/manifest.json`). Или загрузи фото прямо в настройках.
+
+## Горячие клавиши
+
+- **Ctrl+K / ⌘K** — поиск и быстрое добавление (Curse, идея/ссылка, заметка). На телефоне — кнопка «+».
+- В поиске: ↑/↓, Enter, Esc. Если ничего не найдено, Enter переключает на создание.
+- Карта кампуса: колесо мыши или щипок — зум, перетаскивание — сдвиг, двойной клик — приблизить.
+- Главная: «Изменить» или долгое нажатие на виджет — режим правки; тянуть за ручку ⠿ — переставить.
+- Календарь (неделя/день): на ПК событие перетаскивается мышью (шаг 15 минут), на телефоне — долгое нажатие, затем тап по новому времени.
+- Curses на телефоне: свайп вправо — изгнать, влево — удалить.
+- Календарь: «+» или тап по пустому месту в неделе/дне — новое занятие; на ПК занятие можно тянуть и растягивать за нижний край.
+- YouTube Technique: «New» — новое видео из шаблона; на доске карточку тянут мышью, на телефоне — долгим нажатием; на странице видео `/` — меню блоков, `@` — ссылка на другое видео.

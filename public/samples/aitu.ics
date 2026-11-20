@@ -1,0 +1,256 @@
+BEGIN:VCALENDAR
+METHOD:PUBLISH
+PRODID:-//Moodle Pty Ltd//NONSGML Moodle Version 2026042005//EN
+VERSION:2.0
+BEGIN:VEVENT
+UID:266951@lms.astanait.edu.kz
+SUMMARY:Midterm is due
+DESCRIPTION:
+CLASS:PUBLIC
+LAST-MODIFIED:20261111T051419Z
+DTSTAMP:20261119T183655Z
+DTSTART:20261204T180000Z
+DTEND:20261204T180000Z
+CATEGORIES:Calculus 1 | Baitikova Juliya
+END:VEVENT
+BEGIN:VEVENT
+UID:266953@lms.astanait.edu.kz
+SUMMARY:Endterm is due
+DESCRIPTION:
+CLASS:PUBLIC
+LAST-MODIFIED:20261111T051419Z
+DTSTAMP:20261119T183655Z
+DTSTART:20261204T180000Z
+DTEND:20261204T180000Z
+CATEGORIES:Calculus 1 | Baitikova Juliya
+END:VEVENT
+BEGIN:VEVENT
+UID:266955@lms.astanait.edu.kz
+SUMMARY:Final Exam is due
+DESCRIPTION:
+CLASS:PUBLIC
+LAST-MODIFIED:20261111T051419Z
+DTSTAMP:20261119T183655Z
+DTSTART:20261204T180000Z
+DTEND:20261204T180000Z
+CATEGORIES:Calculus 1 | Baitikova Juliya
+END:VEVENT
+BEGIN:VEVENT
+UID:266962@lms.astanait.edu.kz
+SUMMARY:Final Test closes
+DESCRIPTION:
+CLASS:PUBLIC
+LAST-MODIFIED:20261111T051419Z
+DTSTAMP:20261119T183655Z
+DTSTART:20261204T180000Z
+DTEND:20261204T180000Z
+CATEGORIES:Calculus 1 | Baitikova Juliya
+END:VEVENT
+BEGIN:VEVENT
+UID:272402@lms.astanait.edu.kz
+SUMMARY:Midterm is due
+DESCRIPTION:
+CLASS:PUBLIC
+LAST-MODIFIED:20261111T033357Z
+DTSTAMP:20261119T183655Z
+DTSTART:20261204T180000Z
+DTEND:20261204T180000Z
+CATEGORIES:Physics | Olzhas Mukhmetov
+END:VEVENT
+BEGIN:VEVENT
+UID:272404@lms.astanait.edu.kz
+SUMMARY:Endterm is due
+DESCRIPTION:
+CLASS:PUBLIC
+LAST-MODIFIED:20261111T033357Z
+DTSTAMP:20261119T183655Z
+DTSTART:20261204T180000Z
+DTEND:20261204T180000Z
+CATEGORIES:Physics | Olzhas Mukhmetov
+END:VEVENT
+BEGIN:VEVENT
+UID:272406@lms.astanait.edu.kz
+SUMMARY:Final Exam is due
+DESCRIPTION:
+CLASS:PUBLIC
+LAST-MODIFIED:20261111T033357Z
+DTSTAMP:20261119T183655Z
+DTSTART:20261204T180000Z
+DTEND:20261204T180000Z
+CATEGORIES:Physics | Olzhas Mukhmetov
+END:VEVENT
+BEGIN:VEVENT
+UID:272411@lms.astanait.edu.kz
+SUMMARY:Final Test closes
+DESCRIPTION:
+CLASS:PUBLIC
+LAST-MODIFIED:20261111T033358Z
+DTSTAMP:20261119T183655Z
+DTSTART:20261204T180000Z
+DTEND:20261204T180000Z
+CATEGORIES:Physics | Olzhas Mukhmetov
+END:VEVENT
+BEGIN:VEVENT
+UID:296720@lms.astanait.edu.kz
+SUMMARY:Final Exam is due
+DESCRIPTION:FINAL EXAM [1] — INTEGRATED PROJECT PRESENTATION\n\nPrepare and
+	 submit the final project presentation in PDF format.\n\nThe Final Exam [1]
+	 demonstrates how the main parts of your project work together: the problem
+	\, proposed solution\, user interface\, and database.\n\nTASK 1 — PROBLEM A
+	ND TARGET USERS\n\nBriefly present the problem your project addresses.\n\nI
+	nclude:\n\n	*\nWhat is the problem?\n\n	*\nWho are the target users?\n\n	*\
+	nWhy is this problem relevant to these users?\n\n	*\nWhat difficulties do u
+	sers currently experience?\n\nKeep this section short and focused on the fi
+	nal version of your project.\n\n-------------------------\n\nTASK 2 — PROJE
+	CT SOLUTION\n\nPresent the main idea of your project and explain how the pr
+	oposed system helps solve the identified problem.\n\nInclude:\n\n	*\nWhat d
+	oes the system do?\n\n	*\nWhat are its main functions?\n\n	*\nHow does the 
+	proposed solution help the target users?\n\n	*\nWhat is the expected result
+	 of using the system?\n\nFocus on the final version of the project\, includ
+	ing the main features developed throughout the course.\n\n-----------------
+	--------\n\nTASK 3 — HCI DIAGRAM AND USER INTERACTION\n\nPresent the final 
+	HCI diagram / interface prototype of your system.\n\nShow the main screens 
+	and demonstrate how the user moves through the system from the starting poi
+	nt to the main outcome.\n\nThe presentation must clearly show:\n\n	*\nmain 
+	screens\;\n\n	*\nmain buttons/actions\;\n\n	*\ntransitions between screens\
+	;\n\n	*\nthe expected result of each important user action.\n\nThe HCI diag
+	ram/prototype should represent the final version of the proposed system.\n\
+	n-------------------------\n\nTASK 4 — HCI + DATABASE + SQL INTEGRATION\n\n
+	Connect the main buttons/actions in your HCI prototype to the database.\n\n
+	For each main functional button/action\, show:\n\nUser Action → SQL Query →
+	 Database Result\n\nEach example must include:\n\n	*\nthe button/action fro
+	m the interface\;\n\n	*\nthe corresponding SQL code\;\n\n	*\nthe database t
+	able(s) involved\;\n\n	*\nthe result produced by the query\;\n\n	*\na short
+	 explanation of what the user sees after the operation.\n\nFor example:\n\n
+	Button: Find a Room\n\nSELECT *\n\nFROM room\n\nWHERE capacity >= 4\n\nAND 
+	is_available = TRUE\;\n\nDatabase result:\nRooms 301\, 405 and 410 are retu
+	rned.\n\nUser output:\nThe available rooms are displayed on the Search Resu
+	lts screen.\n\nAnother example:\n\nButton: Confirm Booking\n\nINSERT INTO b
+	ooking\n\n(student_id\, room_id\, booking_date\, start_time\, end_time\, st
+	atus)\n\nVALUES\n\n(10234\, 405\, '2026-09-25'\, '15:00'\, '16:00'\, 'Confi
+	rmed')\;\n\nDatabase result:\nA new booking record is created.\n\nUser outp
+	ut:\nThe interface displays “Booking Confirmed.”\n\n-----------------------
+	--\n\n \n\nTASK 5 — FUNCTIONAL CLICKABLE PROTOTYPE\n\nCreate a working\, in
+	teractive prototype of your application.\n\nREQUIREMENTS:\n\n	*\nThe protot
+	ype must have a functional user interface.\n\n	*\nUsers must be able to nav
+	igate between the main screens.\n\n	*\nButtons and other interactive elemen
+	ts must perform meaningful actions.\n\n	*\nThe interface must follow the HC
+	I principles studied during the course.\n\n	*\nThe prototype must represent
+	 the main functionality of your project.\n\n	*\nThe prototype must be conne
+	cted to your existing Supabase database.\n\nYou may use AI-assisted develop
+	ment tools such as ChatGPT\, Cursor\, Lovable\, Bolt\, or other similar too
+	ls to generate and improve your application.\n\nIMPORTANT: A static design\
+	, screenshots\, or a presentation with clickable links is not considered a 
+	functional prototype.\n\n-------------------------\n\n \n\nTASK 6 — SUPABAS
+	E DATABASE AND SQL INTEGRATION\n\nConnect your interactive prototype to the
+	 Supabase database created in Assignment 4 [2].\n\nDATABASE REQUIREMENTS:\n
+	\n	*\nUse the existing database and tables from Assignment 4 [2].\n\n	*\nPr
+	eserve the relationships between entities.\n\n	*\nConnect the application i
+	nterface to the database.\n\n	*\nDemonstrate real database operations throu
+	gh the interface.\n\nYour application must support the following SQL operat
+	ions:\n\n		OPERATION\n		REQUIRED FUNCTIONALITY\n\n		SELECT with WHERE\n		Se
+	arch for or filter specific records\n\n		Aggregation (COUNT\, AVG\, SUM\, o
+	r GROUP BY)\n		Display calculated information\n\n		INSERT\n		Add a new reco
+	rd through the interface\n\n		UPDATE\n		Modify an existing record\n\n		DELE
+	TE\n		Remove an existing record\n\nFOR EACH OPERATION\, DEMONSTRATE:\n\n	*\
+	nThe button or action in the interface.\n\n	*\nThe corresponding database o
+	peration.\n\n	*\nThe result displayed to the user.\n\n	*\nThe actual change
+	 in Supabase\, where applicable.\n\nYou may implement these operations thro
+	ugh Supabase client methods\, APIs\, or SQL queries.\n\nEXAMPLE — SMART CAM
+	PUS STUDY ROOM\n\nButton: Find a Room\n\nAction: Search for available rooms
+	 with a capacity of at least four people.\n\nDatabase operation: SELECT wit
+	h WHERE.\n\nUser output: A list of matching rooms appears on the screen.\n\
+	nButton: Confirm Booking\n\nAction: Create a new booking record.\n\nDatabas
+	e operation: INSERT.\n\nUser output: The interface displays "Booking Confir
+	med"\, and a new record appears in Supabase.\n\nIMPORTANT: The application 
+	must use the real Supabase database. Hardcoded results or simulated databas
+	e operations are not accepted.\n\n-------------------------\n\n \n\nTASK 7 
+	— FINAL DEMONSTRATION AND DEFENSE\n\nDuring the final defense\, demonstrate
+	 your working application.\n\nYour demonstration must include:\n\nA short e
+	xplanation of the problem and proposed solution.\nNavigation through the ma
+	in screens.\nWorking buttons and interactive elements.\nReal database opera
+	tions connected to Supabase.\nChanges in the database after user actions.\n
+	An explanation of how AI tools were used during development.\n\nEvery team 
+	member must understand the project and be able to explain how the interface
+	 communicates with the database.\n\nSUBMISSION REQUIREMENTS\n\nSubmit a fin
+	al presentation in PDF format containing:\n\nProblem and target users.\nPro
+	ject solution and main functionality.\nScreenshots of the completed interac
+	tive prototype with SQL queries.\nExplanation of the connection to Supabase
+	.\nMain database operations.\nAI tools used during development.\nA link to 
+	the working prototype.\n\nThe working prototype must be available for demon
+	stration during the final defense.\n\nAI USAGE POLICY\n\nAI-generated code 
+	is allowed. Students are not required to write every line of code manually.
+	 However\, students are responsible for understanding\, testing\, and expla
+	ining their application. A working application without an understanding of 
+	its functionality is not sufficient for full points.\n\nTEAM SIZE\n\nSTANDA
+	RD SCOPE\n\nREQUIRED SCOPE\n\n2 students\n\nStandard\n\nComplete problem an
+	d solution overview\; final HCI diagram/prototype\; minimum 4 main function
+	al buttons/actions connected to appropriate SQL queries and database result
+	s.\n\n3 students\n\nExpanded\n\nComplete problem and solution overview\; ex
+	panded final HCI diagram/prototype\; minimum 6 main functional buttons/acti
+	ons connected to appropriate SQL queries and database results. The expanded
+	 system must include functionality sufficient to justify the larger team si
+	ze.\n\nDEFENSE PROCEDURE AND GRADING\n\n60% — SUBMITTED FINAL EXAM [1] PRES
+	ENTATION\n\nEach student must upload the Final Exam [1] Presentation as one
+	 PDF file before the deadline.\n\nThe presentation must contain all four re
+	quired parts:\n\n	*\nProblem and Target Users\n\n	*\nProject Solution\n\n	*
+	\nHCI Diagram and User Interaction\n\n	*\nHCI–Database–SQL Integration + pr
+	ototype link\n\nThe presentation must follow the required structure and con
+	tain all necessary diagrams\, interface elements\, SQL code\, database resu
+	lts and explanations.\n\nThe presentation must be submitted in PDF format. 
+	A file submitted in an incorrect format is treated as not submitted.\n\nAll
+	 team members may submit the same group presentation\, but each student mus
+	t upload the PDF individually.\n\nThe submitted presentation is worth a max
+	imum of 60/100 points. The remaining 40 points can only be earned during th
+	e scheduled Final Exam [1] defense.\n\n-------------------------\n\n40% — F
+	INAL EXAM [1] DEFENSE\n\nThe team presents and demonstrates the final versi
+	on of the project.\n\nThe defense must show the complete logical connection
+	:\n\nProblem → Solution → User Interaction → User Action → SQL Query → Data
+	base Result → User Output\n\nMaximum presentation time:\n\n	*\n2 students —
+	 maximum 15 minutes\n\n	*\n3 students — maximum 20 minutes\n\nThe time limi
+	t is strict.\n\nStudents are responsible for organizing the presentation so
+	 that all required components are demonstrated within the allocated time.\n
+	\nAny part that is not presented and explained before the time limit is rea
+	ched receives 0 points for the corresponding Defense component of the rubri
+	c.\n\nFor example\, if the HCI–Database–SQL Integration is correctly includ
+	ed in the submitted PDF but the team does not reach or explain it during th
+	e defense\, the team may receive the corresponding Submitted Presentation p
+	oints\, but the corresponding Defense points are 0.\n\nThe instructor may s
+	top the presentation immediately when the maximum time is reached. Addition
+	al time is not provided for unfinished slides or explanations.\n\nStudents 
+	should explain their work rather than read text directly from the presentat
+	ion.\n\n-------------------------\n\nINDIVIDUAL ASSESSMENT\n\nAll team memb
+	ers must participate in the Final Exam [1] defense.\n\nEach student must un
+	derstand the complete project\, including the problem\, proposed solution\,
+	 HCI design\, database structure and the connection between interface actio
+	ns and SQL operations.\n\nAll team members may submit the same presentation
+	\, but the Defense score is assessed individually. Therefore\, students fro
+	m the same team may receive different Final Exam [1] grades.\n\nABSENCE FRO
+	M DEFENSE\n\nA student who submits the required Final Exam [1] presentation
+	 but does not attend the scheduled defense receives a maximum of 60/100\, p
+	rovided that the other team member(s) successfully defend the project and e
+	xplicitly identify the absent student's contribution.\n\nIf these condition
+	s are not met\, submission alone does not guarantee 60/100.\n\nA student wh
+	o does not attend the defense receives 0/40 Defense points.\n\n \n\nCRITERI
+	ON\n\nTOTAL\n\nSUBMITTED PRESENTATION\n\nDEFENSE\n\nWHAT IS ASSESSED\n\nPro
+	blem & Target Users\n\n15\n\n9\n\n6\n\nProblem and target users are clearly
+	 identified\; relevance and user difficulties are explained.\n\nProject Sol
+	ution\n\n15\n\n9\n\n6\n\nMain idea and functions of the proposed system are
+	 clear and logically address the identified problem.\n\nHCI & User Interact
+	ion\n\n25\n\n15\n\n10\n\nFinal HCI diagram/prototype is complete and logica
+	l\; main screens\, actions\, transitions and outcomes are clearly presented
+	.\n\nHCI–Database–SQL Integration\n\n45\n\n27\n\n18\n\nMain interface actio
+	ns are correctly connected to SQL queries and database operations\; SQL cod
+	e\, relevant tables\, database results and resulting user outputs are corre
+	ctly demonstrated and explained.\n\nTOTAL\n\n100\n\n60\n\n40\n\n		 \n\n\n\n
+	Links:\n------\n[1] https://lms.astanait.edu.kz/mod/assign/view.php?id=7692
+	3\n[2] https://lms.astanait.edu.kz/mod/assign/view.php?id=81524\n
+	
+CLASS:PUBLIC
+LAST-MODIFIED:20261110T030322Z
+DTSTAMP:20261119T183655Z
+DTSTART:20261204T180000Z
+DTEND:20261204T180000Z
+CATEGORIES:Information and Communication Technologies | Traxel Xeniya
+END:VEVENT
+END:VCALENDAR
