@@ -5,11 +5,13 @@ import { Icon } from '../../components/Icon';
 import { BlobImg, Btn, Field, FilePick, IBtn, ImagePick, Modal, Seg, Tabs, Toggle } from '../../components/ui';
 import { db, type Exercise, type ExerciseKind, type Muscle, type Template, type WeightUnit } from '../../db/schema';
 import { weekdayNames } from '../../lib/dates';
-import { chooseBox, confirmBox } from '../../lib/fx';
+import { chooseBox, confirmBox, fx, toast } from '../../lib/fx';
 import { useAutosave, useLive, useMedia } from '../../lib/hooks';
 import { youtubeId } from '../../lib/links';
 import { delBlob, putBlob } from '../../lib/media';
-import { L } from '../../lib/runtime';
+import { L, uid } from '../../lib/runtime';
+import { play } from '../../lib/sound';
+import { bestOf } from '../../lib/stats';
 import {
   activeExercises,
   archiveExercise,
@@ -18,6 +20,7 @@ import {
   createExercise,
   deleteExercise,
   deletePlan,
+  detectPR,
   duplicatePlan,
   exerciseUsage,
   findDuplicate,
@@ -28,15 +31,19 @@ import {
   muscleLabel,
   nextPlanOrder,
   newPlan,
+  newEntry,
   normName,
+  parseWorkoutText,
   PLAN_COLORS,
   PLAN_ICONS,
   planDays,
   planItem,
   removeFromPlan,
   renamePlan,
+  setLabel,
   setPlanDays,
   sortPlans,
+  unitOf,
   type ExerciseDraft,
 } from '../../lib/training';
 
@@ -840,3 +847,139 @@ function PlanItems({ items, exOf, onReorder, onPatch, onRemove }: { items: Templ
 
 /** Отметка «Custom» для своих упражнений. */
 export const CustomTag = ({ ex }: { ex: Exercise }) => (ex.isCustom ? <span className="tag !text-[10px]">Custom</span> : null);
+
+// ───────────── Вставить тренировку из заметок ─────────────
+
+const SAMPLE = 'Bench: 30x10 40x7 35x4\nПодтягивания 20x6 25x8 30x10\nSquats: 30x10 30x10 30x10';
+
+/**
+ * Вставка тренировки «как в заметках»: по строке на упражнение, подходы — «вес x повторы».
+ * Перед добавлением видно, что распозналось, и для каждой строки можно выбрать упражнение из библиотеки.
+ */
+export function PasteWorkoutSheet({ open, onClose, workoutId, onApplied }: { open: boolean; onClose: () => void; workoutId: string; onApplied: () => void }) {
+  const exercises = useLive(() => db.exercises.toArray(), []) || [];
+  const [text, setText] = useState('');
+  const [pick, setPick] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setText('');
+      setPick({});
+    }
+  }, [open]);
+  const lines = useMemo(() => parseWorkoutText(text), [text]);
+  const lib = activeExercises(exercises);
+  const auto = (name: string) => findDuplicate(name, exercises)?.id || 'new';
+  const choice = (i: number, name: string) => pick[i] ?? auto(name);
+  const exLines = lines.map((l, i) => ({ l, i })).filter(({ l }) => !l.note);
+  const notes = lines.filter((l) => l.note);
+  const totalSets = exLines.reduce((s, { l }) => s + l.sets.length, 0);
+  const uniq = new Set(exLines.map(({ l, i }) => (choice(i, l.name) === 'new' ? `n:${normName(l.name)}` : choice(i, l.name)))).size;
+
+  const apply = async () => {
+    setBusy(true);
+    const res = await guard(L('добавить тренировку из заметок', 'add workout from notes'), async () => {
+      const fresh = await db.workouts.get(workoutId);
+      if (!fresh) throw new Error(L('Тренировка не найдена', 'Workout not found'));
+      const all = await db.workouts.toArray();
+      const created = new Map<string, Exercise>();
+      const entries = fresh.entries.slice();
+      let best: { title: string; sub?: string } | null = null;
+      let prs = 0;
+      for (const { l, i } of exLines) {
+        const c = choice(i, l.name);
+        let ex: Exercise | undefined;
+        if (c === 'new') {
+          const key = normName(l.name);
+          ex = created.get(key) || (await createExercise({ name: l.name }));
+          created.set(key, ex);
+        } else ex = await db.exercises.get(c);
+        if (!ex) continue;
+        let entry = entries.find((e) => e.exerciseId === ex!.id);
+        if (!entry) {
+          entry = { ...newEntry(ex) };
+          entries.push(entry);
+        }
+        const kind = kindOf(ex);
+        const unit = unitOf(ex);
+        for (const s of l.sets) {
+          const prior = bestOf(all, ex.id, workoutId);
+          const input = kind === 'time' ? { reps: 0, weight: 0, time: s.reps } : { reps: s.reps, weight: s.weight };
+          const pr = detectPR(kind, unit, prior, entry.sets, input);
+          entry.sets = [...entry.sets, { id: uid(), ...input, pr: pr.isPR }];
+          if (pr.isPR) {
+            prs++;
+            best = { title: `${ex.name} — ${setLabel(entry.sets[entry.sets.length - 1], kind, unit)}`, sub: pr.sub };
+          }
+        }
+      }
+      const noteText = notes.map((n) => (n.name ? `${n.name}: ${n.note}` : n.note)).join('\n');
+      await db.workouts.put({ ...fresh, entries, notes: [fresh.notes, noteText].filter((x) => x && x.trim()).join('\n') });
+      return { prs, best };
+    });
+    setBusy(false);
+    if (!res) return;
+    onApplied();
+    onClose();
+    toast(`${L('Добавлено', 'Added')}: ${uniq} ${L('упр.', 'ex.')}, ${totalSets} ${L('подходов', 'sets')}${res.prs ? ` · PR ×${res.prs}` : ''}`);
+    if (res.best) {
+      play('flash');
+      fx.emit({ type: 'blackflash', title: res.best.title, sub: res.prs > 1 ? `${res.best.sub || ''} · PR ×${res.prs}` : res.best.sub });
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={L('Вставить из заметок', 'Paste from notes')}
+      kanji="録"
+      wide
+      footer={
+        <>
+          <Btn size="sm" variant="ghost" onClick={onClose}>
+            {L('Отмена', 'Cancel')}
+          </Btn>
+          <Btn size="sm" icon="check" disabled={busy || !exLines.length} onClick={() => void apply()}>
+            {L('Добавить', 'Add')} {exLines.length ? `${uniq} ${L('упр.', 'ex.')} · ${totalSets} ${L('подх.', 'sets')}` : ''}
+          </Btn>
+        </>
+      }
+    >
+      <p className="text-[13px] text-muted mb-2">
+        {L('По строке на упражнение: название и подходы «вес x повторы». Можно писать x, х, × или *.', 'One line per exercise: name and sets as “weight x reps”. x, ×, or * all work.')}
+      </p>
+      <textarea className="inp mono text-[14px] min-h-[150px]" value={text} onChange={(e) => setText(e.target.value)} placeholder={SAMPLE} autoFocus data-testid="paste-text" />
+      {lines.length > 0 && (
+        <div className="mt-3 space-y-1.5" data-testid="paste-preview">
+          <div className="label">{L('Что распозналось', 'Recognized')}</div>
+          {exLines.map(({ l, i }) => {
+            const c = choice(i, l.name);
+            return (
+              <div key={i} className="rounded-xl bg-panel-2 px-3 py-2 flex flex-wrap items-center gap-2">
+                <select className="inp !py-1 !w-auto max-w-[60%] text-[13.5px]" value={c} onChange={(e) => setPick({ ...pick, [i]: e.target.value })} aria-label={l.name}>
+                  <option value="new">
+                    + {L('Новое', 'New')}: {l.name}
+                  </option>
+                  {lib.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
+                    </option>
+                  ))}
+                </select>
+                {c !== 'new' && <span className="text-[11px] text-jade">{L('из библиотеки', 'from library')}</span>}
+                <span className="mono text-[13px] flex-1 min-w-[8rem]">{l.sets.length ? l.sets.map((s) => `${s.weight}×${s.reps}`).join('  ') : <span className="text-dim">{L('без подходов', 'no sets')}</span>}</span>
+              </div>
+            );
+          })}
+          {notes.map((n, k) => (
+            <div key={`n${k}`} className="rounded-xl px-3 py-2 text-[13px] text-muted border border-dashed border-line">
+              <Icon name="note" size={12} /> {L('В заметки тренировки', 'To workout notes')}: {n.name ? `${n.name}: ` : ''}
+              {n.note}
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}

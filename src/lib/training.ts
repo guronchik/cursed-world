@@ -418,3 +418,70 @@ export function detectPR(kind: ExerciseKind, unit: WeightUnit, prior: { has: boo
   if (e(s.weight, s.reps) > prev1rm + 0.01) return { isPR: true, sub: `${L('Новый рекорд 1ПМ', 'New est. 1RM PR')}: ${Math.round(e(s.weight, s.reps) * 10) / 10} ${unit}` };
   return { isPR: false };
 }
+
+// ───────────── Быстрый ввод «как в заметках» ─────────────
+
+export interface ParsedLine {
+  raw: string;
+  name: string;
+  sets: { weight: number; reps: number }[];
+  note?: string;
+}
+
+/** Подход в записи «вес x повторы»: 30x10, 30 х 10, 30×10, 30*10, 22,5x8. */
+const SET_RE = /(\d+(?:[.,]\d+)?)\s*[xх×*]\s*(\d+)/gi;
+
+/** Разобрать одну строку: «30x10 40x7 35x4» → подходы. */
+export function parseSets(text: string) {
+  const out: { weight: number; reps: number }[] = [];
+  for (const m of text.matchAll(SET_RE)) {
+    const weight = Number(m[1].replace(',', '.'));
+    const reps = Number(m[2]);
+    if (reps > 0 && weight >= 0) out.push({ weight, reps });
+  }
+  return out;
+}
+
+/**
+ * Тренировка из заметок, по строке на упражнение: «Bench: 30x10 40x7 35x4», «Подтягивания 20x6 25x8».
+ * Строка без подходов, но с текстом после двоеточия, — заметка. Строка только с названием — упражнение без подходов.
+ */
+export function parseWorkoutText(text: string): ParsedLine[] {
+  const out: ParsedLine[] = [];
+  for (const raw0 of text.split(/\r?\n/)) {
+    const raw = raw0.trim();
+    if (!raw) continue;
+    const colon = raw.indexOf(':');
+    const firstSet = raw.search(/\d+(?:[.,]\d+)?\s*[xх×*]\s*\d+/i);
+    let name: string;
+    let rest: string;
+    if (colon > 0 && (firstSet < 0 || colon < firstSet)) {
+      name = raw.slice(0, colon);
+      rest = raw.slice(colon + 1);
+    } else if (firstSet > 0) {
+      name = raw.slice(0, firstSet);
+      rest = raw.slice(firstSet);
+    } else if (firstSet === 0) {
+      name = '';
+      rest = raw;
+    } else {
+      name = raw;
+      rest = '';
+    }
+    name = name.replace(/[:\-–—]+\s*$/, '').trim().replace(/\s+/g, ' ');
+    const sets = parseSets(rest);
+    const leftover = rest.replace(SET_RE, '').replace(/[^\p{L}]+/gu, ' ').trim();
+    if (!sets.length && leftover.split(' ').length > 1) {
+      out.push({ raw, name, sets, note: rest.trim() });
+      continue;
+    }
+    if (!name && sets.length && out.length && !out[out.length - 1].note) {
+      // продолжение предыдущей строки
+      out[out.length - 1].sets.push(...sets);
+      continue;
+    }
+    if (!name) continue;
+    out.push({ raw, name, sets });
+  }
+  return out;
+}

@@ -1,6 +1,6 @@
 // Black Flash — зал: журнал тренировок, автоматические PR с молнией BLACK FLASH.
 import { AnimatePresence, motion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { Btn, Empty, Field, IBtn, Panel, Stat, Tabs } from '../../components/ui';
 import { db, type Exercise, type Workout, type WorkoutEntry, type WorkoutSet } from '../../db/schema';
@@ -14,7 +14,7 @@ import { play } from '../../lib/sound';
 import { bestOf, e1rm, prCount, tonnage } from '../../lib/stats';
 import { detectPR, entryName, guard, kindOf, MUSCLE_LABELS, muscleLabel, newEntry, parseTime, setLabel, unitOf, UNDO_MS } from '../../lib/training';
 import { FlashCalendar, FlashStats, Library, Photos } from './FlashMore';
-import { AddExerciseSheet, PlanList } from './train';
+import { AddExerciseSheet, PasteWorkoutSheet, PlanList } from './train';
 
 /** Названия групп мышц (оставлено для совместимости импортов). */
 export const MUSCLES = MUSCLE_LABELS;
@@ -98,6 +98,16 @@ function WorkoutEditor({ id }: { id: string }) {
   const exercises = useLive(() => db.exercises.toArray(), []) || [];
   const templates = useLive(() => db.templates.toArray(), []) || [];
   const [sheet, setSheet] = useState(false);
+  const [paste, setPaste] = useState(false);
+  const [hdrKey, setHdrKey] = useState(0);
+  // после вставки из заметок поле «Заметки» перечитывается, когда в базе уже новый текст
+  const pendingHdr = useRef(false);
+  useEffect(() => {
+    if (pendingHdr.current && w) {
+      pendingHdr.current = false;
+      setHdrKey((k) => k + 1);
+    }
+  }, [w?.notes]); // eslint-disable-line react-hooks/exhaustive-deps
   if (w === undefined) return null;
   if (!w)
     return (
@@ -183,7 +193,7 @@ function WorkoutEditor({ id }: { id: string }) {
         </div>
       </div>
 
-      <WorkoutHeader w={w} />
+      <WorkoutHeader key={hdrKey} w={w} />
 
       <div className="grid grid-cols-3 gap-3">
         <Panel bodyClass="p-3">
@@ -278,9 +288,15 @@ function WorkoutEditor({ id }: { id: string }) {
         </AnimatePresence>
       </div>
 
-      <Btn variant="ghost" icon="plus" className="w-full" onClick={() => setSheet(true)}>
-        {L('Добавить упражнение', 'Add exercise')}
-      </Btn>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Btn variant="ghost" icon="plus" className="w-full" onClick={() => setSheet(true)}>
+          {L('Добавить упражнение', 'Add exercise')}
+        </Btn>
+        <Btn variant="ghost" icon="note" className="w-full" onClick={() => setPaste(true)}>
+          {L('Вставить из заметок', 'Paste from notes')}
+        </Btn>
+      </div>
+      <PasteWorkoutSheet open={paste} onClose={() => setPaste(false)} workoutId={w.id} onApplied={() => (pendingHdr.current = true)} />
       <AddExerciseSheet
         open={sheet}
         onClose={() => setSheet(false)}
