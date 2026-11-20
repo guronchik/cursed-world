@@ -1,4 +1,5 @@
 import { fx } from '../lib/fx';
+import { META_TABLE, syncMiddleware, type SyncMeta } from './syncCore';
 import Dexie, { type Table } from 'dexie';
 import type { Grade } from '../lib/grade';
 import { upgradeToV3 } from './migrate3';
@@ -654,6 +655,7 @@ export class CursedDB extends Dexie {
   docs!: Table<Doc, string>;
   ideas!: Table<InboxIdea, string>;
   videoStatuses!: Table<VideoStatus, string>;
+  syncMeta!: Table<SyncMeta, string>;
 
   constructor() {
     super('cursed-world');
@@ -682,6 +684,8 @@ export class CursedDB extends Dexie {
         await fillSettings(tx);
         await upgradeToV5(tx);
       });
+    // v6: таблица отметок для синхронизации ПК ↔ телефон. Данные не меняются.
+    this.version(6).stores({ ...V1_STORES, ...V2_STORES, ...V3_STORES, ...V4_STORES, [META_TABLE]: 'id, t, u' });
   }
 }
 
@@ -901,6 +905,9 @@ export const DATA_TABLES = [
   'ideas',
   'videoStatuses',
 ] as const;
+
+// каждая запись в таблицы данных получает отметку времени (для синхронизации); blobs синхронизируются отдельно
+db.use(syncMiddleware(DATA_TABLES));
 
 export const DEFAULT_SETTINGS = (): Settings => ({
   id: 'app',

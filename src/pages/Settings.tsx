@@ -16,6 +16,7 @@ import { hashPin, newSalt } from '../lib/pin';
 import { L } from '../lib/runtime';
 import { useSettings } from '../lib/settings';
 import { AnimationSettings, AppearanceSettings, CalendarSettings } from './settings/Appearance';
+import { SyncSettings } from './settings/Sync';
 
 type InstallEvt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 
@@ -179,6 +180,8 @@ export function SettingsPage() {
             ))}
           </div>
         </Panel>
+
+        <SyncSettings />
 
         <Panel title={L('Данные и резервная копия', 'Data & backup')} kanji="蔵">
           <div className="space-y-3">

@@ -14,6 +14,7 @@ import { ensureSeeded } from './db/seed';
 import { setSemester } from './lib/calendar';
 import { MigrationReview } from './components/MigrationReview';
 import { startBackground } from './lib/background';
+import { startAutoSync } from './lib/sync';
 import { useLive, useMedia } from './lib/hooks';
 import { rt } from './lib/runtime';
 import { SettingsCtx } from './lib/settings';
@@ -53,6 +54,7 @@ export default function App() {
       .then(() => {
         setReady(true);
         startBackground();
+        startAutoSync();
       })
       .catch((e) => setErr(String(e?.message || e)));
   }, []);
